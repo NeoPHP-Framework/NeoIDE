@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="PHP" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+
+  <!-- Outside of PHP tags: HTML -->
+  <RuleSet>
+    <Span ruleSet="PhpCode" multiline="true">
+      <Begin color="Delimiter">&lt;\?(php|=)?</Begin>
+      <End color="Delimiter">\?&gt;</End>
+    </Span>
+    <Import ruleSet="HtmlMain"/>
+  </RuleSet>
+
+  <!--HTML-->
+
+  <RuleSet name="PhpDocComment">
+    <Rule color="DocTag">@[\w-]+</Rule>
+    <Rule color="Variable">\$\w+</Rule>
+  </RuleSet>
+
+  <RuleSet name="PhpDqString">
+    <Span begin="\\" end="."/>
+    <Rule color="Variable">\$\w+(-&gt;\w+)?</Rule>
+    <Span color="Variable" begin="\{\$" end="\}"/>
+  </RuleSet>
+
+  <RuleSet name="PhpCode">
+    <Span color="DocComment" ruleSet="PhpDocComment" multiline="true" begin="/\*\*" end="\*/"/>
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/"/>
+    <Span color="Comment" begin="//" end="(?=\?&gt;)|$"/>
+    <Span color="Comment" begin="\#(?!\[)" end="(?=\?&gt;)|$"/>
+
+    <Span color="String" multiline="true" ruleSet="PhpDqString">
+      <Begin>"</Begin>
+      <End>"</End>
+    </Span>
+    <Span color="String" multiline="true">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="."/>
+      </RuleSet>
+    </Span>
+    <Span color="String" multiline="true" ruleSet="PhpDqString">
+      <Begin>&lt;&lt;&lt;\s*"?[A-Za-z_]\w*"?\s*$</Begin>
+      <End>^\s*[A-Za-z_]\w*\b</End>
+    </Span>
+    <Span color="String" multiline="true">
+      <Begin>&lt;&lt;&lt;\s*'[A-Za-z_]\w*'\s*$</Begin>
+      <End>^\s*[A-Za-z_]\w*\b</End>
+    </Span>
+
+    <!-- Attributes #[Route(...)] -->
+    <Rule color="Metadata">\#\[\s*\\?[A-Za-z_][\w\\]*</Rule>
+
+    <Rule color="Keyword">\$this\b</Rule>
+    <Rule color="Variable">\$\$?[\p{L}_][\w]*</Rule>
+
+    <Keywords color="Keyword">
+      <Word>abstract</Word><Word>and</Word><Word>array</Word><Word>as</Word><Word>break</Word>
+      <Word>callable</Word><Word>case</Word><Word>catch</Word><Word>class</Word><Word>clone</Word>
+      <Word>const</Word><Word>continue</Word><Word>declare</Word><Word>default</Word><Word>do</Word>
+      <Word>echo</Word><Word>else</Word><Word>elseif</Word><Word>empty</Word><Word>enddeclare</Word>
+      <Word>endfor</Word><Word>endforeach</Word><Word>endif</Word><Word>endswitch</Word><Word>endwhile</Word>
+      <Word>enum</Word><Word>eval</Word><Word>exit</Word><Word>die</Word><Word>extends</Word><Word>final</Word>
+      <Word>finally</Word><Word>fn</Word><Word>for</Word><Word>foreach</Word><Word>function</Word>
+      <Word>global</Word><Word>goto</Word><Word>if</Word><Word>implements</Word><Word>include</Word>
+      <Word>include_once</Word><Word>instanceof</Word><Word>insteadof</Word><Word>interface</Word>
+      <Word>isset</Word><Word>list</Word><Word>match</Word><Word>namespace</Word><Word>new</Word>
+      <Word>or</Word><Word>print</Word><Word>private</Word><Word>protected</Word><Word>public</Word>
+      <Word>readonly</Word><Word>require</Word><Word>require_once</Word><Word>return</Word><Word>static</Word>
+      <Word>switch</Word><Word>throw</Word><Word>trait</Word><Word>try</Word><Word>unset</Word><Word>use</Word>
+      <Word>var</Word><Word>while</Word><Word>xor</Word><Word>yield</Word><Word>from</Word>
+      <Word>self</Word><Word>parent</Word><Word>true</Word><Word>false</Word><Word>null</Word>
+      <Word>TRUE</Word><Word>FALSE</Word><Word>NULL</Word>
+      <Word>int</Word><Word>float</Word><Word>string</Word><Word>bool</Word><Word>void</Word><Word>mixed</Word>
+      <Word>never</Word><Word>object</Word><Word>iterable</Word><Word>strict_types</Word>
+    </Keywords>
+
+    <!-- Declarations -->
+    <Rule color="Function">(?&lt;=\bfunction\s+&amp;?)[A-Za-z_]\w*</Rule>
+    <Rule color="Type">(?&lt;=\b(class|interface|trait|enum)\s+)[A-Za-z_]\w*</Rule>
+    <Rule color="Constant">(?&lt;=\bconst\s+)[A-Za-z_]\w*</Rule>
+
+    <!-- Member access -->
+    <Rule color="FunctionCall">(?&lt;=(-&gt;|\?-&gt;))[A-Za-z_]\w*(?=\s*\()</Rule>
+    <Rule color="Property">(?&lt;=(-&gt;|\?-&gt;))[A-Za-z_]\w*</Rule>
+    <Rule color="StaticCall">(?&lt;=::)[A-Za-z_]\w*(?=\s*\()</Rule>
+    <Rule color="Keyword">(?&lt;=::)class\b</Rule>
+    <Rule color="Constant">(?&lt;=::)[A-Za-z_]\w*</Rule>
+
+    <!-- Constants & calls -->
+    <Rule color="Constant">\b[A-Z][A-Z0-9_]{1,}\b(?!\s*\()(?!\\)</Rule>
+    <Rule color="FunctionCall">\b[a-z_][\w]*(?=\s*\()</Rule>
+
+    <Rule color="Number">\b0[xX][0-9a-fA-F_]+|\b0[bB][01_]+|\b\d[\d_]*(\.\d+)?([eE][+-]?\d+)?</Rule>
+  </RuleSet>
+</SyntaxDefinition>

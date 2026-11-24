@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net11.0-windows</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UseWPF>true</UseWPF>
+        <UseWindowsForms>false</UseWindowsForms>
+        <RootNamespace>NeoIDE</RootNamespace>
+        <AssemblyName>NeoIDE</AssemblyName>
+        <Version>0.1.0</Version>
+        <NoWarn>$(NoWarn);CS8618;CS0108;WFO2000</NoWarn>
+        <StartupObject>NeoIDE.Program</StartupObject>
+    <ApplicationIcon>Resources\neoide.ico</ApplicationIcon>
+        <Product>NeoIDE</Product>
+        <Description>The IDE for the NeoPHP framework</Description>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+        <PackageReference Include="Velopack" Version="1.2.161" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Editor\Highlighting\*.xshd" />
+        <EmbeddedResource Include="Resources\stubs.php" />
+        <EmbeddedResource Include="Themes\Bundled\*.json" />
+        <Resource Include="Resources\neoide.ico" />
+        <Resource Include="Resources\logo.png" />
+    </ItemGroup>
+
+</Project>

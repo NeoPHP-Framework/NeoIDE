@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="Ignore" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet>
+    <Span color="Comment" begin="^\s*\#" end="$"/>
+    <Rule color="Keyword">^!</Rule>
+    <Rule color="Constant">[*?]+</Rule>
+    <Rule color="Punctuation">/</Rule>
+  </RuleSet>
+</SyntaxDefinition>

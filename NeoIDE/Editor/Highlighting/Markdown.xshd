@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="Markdown" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet>
+    <Span color="Code" multiline="true" begin="^\s*(```|~~~)" end="^\s*(```|~~~)\s*$"/>
+    <Rule color="Heading">^\#{1,6}\s.*$</Rule>
+    <Rule color="Heading">^(=+|-+)\s*$</Rule>
+    <Rule color="Comment">^\s*&gt;.*$</Rule>
+    <Span color="Comment" multiline="true" begin="&lt;!--" end="--&gt;"/>
+    <Rule color="Code">`[^`\n]+`</Rule>
+    <Rule color="Bold">(\*\*|__)[^*_\n]+(\*\*|__)</Rule>
+    <Rule color="Italic">(?&lt;![\w*])[*_][^*_\n]+[*_](?![\w*])</Rule>
+    <Rule color="Link">!?\[[^\]\n]*\]\([^)\n]*\)</Rule>
+    <Rule color="Link">&lt;https?://[^&gt;]+&gt;|https?://\S+</Rule>
+    <Rule color="Keyword">^\s*([-*+]|\d+\.)\s</Rule>
+    <Rule color="Punctuation">\|</Rule>
+  </RuleSet>
+</SyntaxDefinition>

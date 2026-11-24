@@ -1,0 +1,38 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- PhpStorm "Light" (New UI) palette -->
+    <SolidColorBrush x:Key="WindowBg" Color="#F7F8FA"/>
+    <SolidColorBrush x:Key="TitleBarBg" Color="#F7F8FA"/>
+    <SolidColorBrush x:Key="PanelBg" Color="#F7F8FA"/>
+    <SolidColorBrush x:Key="EditorBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#EBECF0"/>
+    <SolidColorBrush x:Key="SubtleBorder" Color="#EBECF0"/>
+    <SolidColorBrush x:Key="HoverBg" Color="#DFE1E5"/>
+    <SolidColorBrush x:Key="PressedBg" Color="#D3D5DB"/>
+    <SolidColorBrush x:Key="SelectedBg" Color="#D5E1FF"/>
+    <SolidColorBrush x:Key="SelectedInactiveBg" Color="#DFE1E5"/>
+    <SolidColorBrush x:Key="Fg" Color="#000000"/>
+    <SolidColorBrush x:Key="FgSecondary" Color="#818594"/>
+    <SolidColorBrush x:Key="FgDisabled" Color="#A8ADBD"/>
+    <SolidColorBrush x:Key="Accent" Color="#3574F0"/>
+    <SolidColorBrush x:Key="AccentHover" Color="#3369D6"/>
+    <SolidColorBrush x:Key="AccentFg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="InputBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="InputBorder" Color="#C9CCD6"/>
+    <SolidColorBrush x:Key="InputFocusBorder" Color="#3574F0"/>
+    <SolidColorBrush x:Key="ButtonBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ButtonBorder" Color="#C9CCD6"/>
+    <SolidColorBrush x:Key="PopupBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="PopupBorder" Color="#DFE1E5"/>
+    <SolidColorBrush x:Key="TabActiveBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="TabBarBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ScrollThumb" Color="#C9CCD6"/>
+    <SolidColorBrush x:Key="ScrollThumbHover" Color="#A8ADBD"/>
+    <SolidColorBrush x:Key="ErrorFg" Color="#E55765"/>
+    <SolidColorBrush x:Key="SuccessFg" Color="#208A3C"/>
+    <SolidColorBrush x:Key="WarnFg" Color="#C27D04"/>
+    <SolidColorBrush x:Key="LinkFg" Color="#2E55A3"/>
+    <SolidColorBrush x:Key="ConsoleBg" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="WelcomeSideBg" Color="#F7F8FA"/>
+    <SolidColorBrush x:Key="WelcomeMainBg" Color="#FFFFFF"/>
+</ResourceDictionary>

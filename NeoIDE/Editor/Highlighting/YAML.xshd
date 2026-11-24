@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="YAML" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet>
+    <Span color="Comment" begin="(?&lt;=^|\s)\#" end="$"/>
+    <Rule color="Delimiter">^(---|\.\.\.)\s*$</Rule>
+    <Rule color="Key">^\s*-?\s*[^\s#'"\-][^:#\n]*?(?=:(\s|$))</Rule>
+    <Rule color="Key">^\s*-?\s*("[^"]*"|'[^']*')(?=:(\s|$))</Rule>
+    <Span color="String" begin="&quot;" end="&quot;">
+      <RuleSet>
+        <Span color="StringEscape" begin="\\" end="."/>
+        <Rule color="Variable">%[\w.()]+%</Rule>
+      </RuleSet>
+    </Span>
+    <Span color="String" begin="'" end="'">
+      <RuleSet><Rule color="Variable">%[\w.()]+%</Rule></RuleSet>
+    </Span>
+    <Rule color="Metadata">![\w!/.-]*</Rule>
+    <Rule color="Variable">[&amp;*][\w-]+</Rule>
+    <Rule color="Variable">%[\w.()]+%</Rule>
+    <Rule color="Constant">@[\w\\.-]+</Rule>
+    <Keywords color="Keyword">
+      <Word>true</Word><Word>false</Word><Word>null</Word><Word>yes</Word><Word>no</Word><Word>on</Word><Word>off</Word>
+      <Word>True</Word><Word>False</Word><Word>Null</Word><Word>TRUE</Word><Word>FALSE</Word><Word>NULL</Word><Word>~</Word>
+    </Keywords>
+    <Rule color="Number">(?&lt;=[:\-\[,]\s*)-?\d+(\.\d+)?(?=\s*($|[,\]#]))</Rule>
+    <Rule color="Punctuation">[|&gt;][-+]?(?=\s*$)</Rule>
+    <Rule color="String">(?&lt;=:\s+)[^\s#\[\{&amp;*!|&gt;'"%@][^#\n]*</Rule>
+    <Rule color="String">(?&lt;=^\s*-\s+)[^\s#\[\{&amp;*!|&gt;'"%@:][^#:\n]*$</Rule>
+  </RuleSet>
+</SyntaxDefinition>

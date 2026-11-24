@@ -1,0 +1,455 @@
+﻿<Window x:Class="NeoIDE.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:NeoIDE.Controls"
+        xmlns:vm="clr-namespace:NeoIDE.ViewModels"
+        Title="NeoIDE" Height="900" Width="1500" MinWidth="800" MinHeight="500"
+        WindowStartupLocation="CenterScreen" Icon="{StaticResource NeoIcon}"
+        Background="{DynamicResource WindowBg}" Foreground="{DynamicResource Fg}"
+        FontFamily="{StaticResource UiFont}" FontSize="{DynamicResource UiFontSize}"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+    <Window.Resources>
+        <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+        <Style x:Key="StripToggle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Margin" Value="4,3"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fg}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="b" Background="Transparent" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource HoverBg}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="b" Property="Background" Value="{DynamicResource Accent}"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <HierarchicalDataTemplate DataType="{x:Type vm:FileNode}" ItemsSource="{Binding Children}">
+            <StackPanel Orientation="Horizontal" Background="Transparent">
+                <c:FileIcon Path="{Binding FullPath}" IsDirectory="{Binding IsDirectory}" IsRoot="{Binding IsRoot}"
+                            IsExpanded="{Binding IsExpanded}" PhpKind="{Binding PhpKind}" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="name" Text="{Binding Name}" VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding Hint}" Margin="8,0,0,0" Foreground="{DynamicResource FgSecondary}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <HierarchicalDataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsRoot}" Value="True">
+                    <Setter TargetName="name" Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                    <Setter TargetName="name" Property="Foreground" Value="{DynamicResource WarnFg}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding HasGitBrush}" Value="True">
+                    <Setter TargetName="name" Property="Foreground" Value="{Binding GitBrush}"/>
+                </DataTrigger>
+            </HierarchicalDataTemplate.Triggers>
+        </HierarchicalDataTemplate>
+    </Window.Resources>
+
+    <Border x:Name="RootBorder" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="1">
+        <DockPanel>
+            <!-- ================= Title bar ================= -->
+            <Grid DockPanel.Dock="Top" Height="40" Background="{DynamicResource TitleBarBg}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Image Source="{StaticResource NeoLogo}" Width="22" Height="22" Margin="12,0,8,0" VerticalAlignment="Center"
+                       ToolTip="NeoIDE"/>
+
+                <Menu x:Name="MainMenu" Grid.Column="1" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
+                    <MenuItem Header="_File">
+                        <MenuItem Header="New Project…" Click="NewProject_Click"/>
+                        <MenuItem Header="New…" InputGestureText="Alt+Insert" Click="NewFile_Click"/>
+                        <MenuItem Header="New PHP Class…" Click="NewClass_Click"/>
+                        <MenuItem Header="New Directory…" Click="NewDirectory_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Open…" Click="OpenProject_Click"/>
+                        <MenuItem x:Name="RecentMenu" Header="Recent Projects"/>
+                        <Separator/>
+                        <MenuItem Header="Save All" InputGestureText="Ctrl+S" Click="SaveAll_Click"/>
+                        <MenuItem Header="Close Tab" InputGestureText="Ctrl+F4" Click="CloseTab_Click"/>
+                        <MenuItem Header="Close Project" Click="CloseProject_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Settings…" InputGestureText="Ctrl+Alt+S" Click="Settings_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Exit" Click="Exit_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="_Edit">
+                        <MenuItem Header="Undo" InputGestureText="Ctrl+Z" Click="Undo_Click"/>
+                        <MenuItem Header="Redo" InputGestureText="Ctrl+Shift+Z" Click="Redo_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Find…" InputGestureText="Ctrl+F" Click="Find_Click"/>
+                        <MenuItem Header="Find in Files…" InputGestureText="Ctrl+Shift+F" Click="FindInFiles_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Duplicate Line" InputGestureText="Ctrl+D" IsEnabled="False"/>
+                        <MenuItem Header="Delete Line" InputGestureText="Ctrl+Y" IsEnabled="False"/>
+                        <MenuItem Header="Comment with Line Comment" InputGestureText="Ctrl+/" IsEnabled="False"/>
+                        <MenuItem Header="Move Line Up/Down" InputGestureText="Ctrl+Shift+↑/↓" IsEnabled="False"/>
+                    </MenuItem>
+                    <MenuItem Header="_View">
+                        <MenuItem Header="Appearance &amp; Display…" Click="Appearance_Click"/>
+                        <MenuItem x:Name="ThemeMenu" Header="Theme"/>
+                        <Separator/>
+                        <MenuItem Header="Zoom IDE In" InputGestureText="Ctrl+Alt+=" Click="ZoomIn_Click"/>
+                        <MenuItem Header="Zoom IDE Out" InputGestureText="Ctrl+Alt+-" Click="ZoomOut_Click"/>
+                        <MenuItem Header="Reset IDE Zoom" InputGestureText="Ctrl+Alt+0" Click="ResetZoom_Click"/>
+                        <MenuItem x:Name="CompactItem" Header="Compact mode" IsCheckable="True" Click="Compact_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="WrapItem" Header="Soft-wrap lines" IsCheckable="True" Click="Wrap_Click"/>
+                        <MenuItem x:Name="WhitespaceItem" Header="Show whitespaces" IsCheckable="True" Click="Whitespace_Click"/>
+                        <MenuItem x:Name="LineNumbersItem" Header="Show line numbers" IsCheckable="True" Click="LineNumbers_Click"/>
+                        <MenuItem x:Name="StatusBarItem" Header="Status bar" IsCheckable="True" Click="StatusBar_Click"/>
+                        <MenuItem x:Name="ToolStripItem" Header="Tool window bar" IsCheckable="True" Click="ToolStrip_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Project" InputGestureText="Alt+1" Click="ToggleProject_Click"/>
+                        <MenuItem Header="Terminal" InputGestureText="Alt+F12" Click="ShowTerminal_Click"/>
+                        <MenuItem Header="Run" InputGestureText="Alt+4" Click="ShowRun_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Increase Font Size" InputGestureText="Ctrl+=" Click="FontBigger_Click"/>
+                        <MenuItem Header="Decrease Font Size" InputGestureText="Ctrl+-" Click="FontSmaller_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="_Navigate">
+                        <MenuItem Header="Search Everywhere" InputGestureText="Double Shift" Click="SearchEverywhere_Click"/>
+                        <MenuItem Header="Class…" InputGestureText="Ctrl+N" Click="GoToClass_Click"/>
+                        <MenuItem Header="File…" InputGestureText="Ctrl+Shift+N" Click="GoToFile_Click"/>
+                        <MenuItem Header="Declaration" InputGestureText="Ctrl+B" Click="GoToDeclaration_Click"/>
+                        <MenuItem Header="Select in Project View" InputGestureText="Alt+F1" Click="SelectInProject_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="_Code">
+                        <MenuItem Header="Code Completion" InputGestureText="Ctrl+Space" Click="Completion_Click"/>
+                        <MenuItem Header="Show Context Actions" InputGestureText="Alt+Enter" Click="QuickFix_Click"/>
+                        <MenuItem Header="Optimize Imports" InputGestureText="Ctrl+Alt+O" Click="OptimizeImports_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="_Git">
+                        <MenuItem Header="Commit…" InputGestureText="Ctrl+K" Click="GitCommitPanel_Click"/>
+                        <MenuItem Header="Push…" InputGestureText="Ctrl+Shift+K" Click="GitPush_Click"/>
+                        <MenuItem Header="Update Project (pull)" InputGestureText="Ctrl+T" Click="GitPull_Click"/>
+                        <MenuItem Header="Fetch" Click="GitFetch_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Branches…" InputGestureText="Ctrl+Shift+`" Click="GitWidget_Click"/>
+                        <MenuItem Header="New Branch…" Click="GitNewBranch_Click"/>
+                        <MenuItem Header="Stash Changes…" Click="GitStash_Click"/>
+                        <MenuItem Header="Unstash (pop)" Click="GitUnstash_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Show Diff of Current File" InputGestureText="Ctrl+D (in Commit)" Click="GitDiffCurrent_Click"/>
+                        <MenuItem Header="Show History of Current File" Click="GitHistoryCurrent_Click"/>
+                        <MenuItem Header="Rollback Current File…" Click="GitRollbackCurrent_Click"/>
+                        <MenuItem Header="Show Git Log" InputGestureText="Alt+9" Click="GitLog_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Create Git Repository…" Click="GitInit_Click"/>
+                        <MenuItem Header="Manage Remotes…" Click="GitRemotes_Click"/>
+                        <MenuItem Header="Clone Repository…" Click="GitClone_Click"/>
+                    </MenuItem>
+                    <MenuItem x:Name="NeoMenu" Header="Neo_PHP">
+                        <MenuItem Header="Start server (bin/neo serve)" InputGestureText="Shift+F10" Click="Run_Click"/>
+                        <MenuItem Header="Stop server" InputGestureText="Ctrl+F2" Click="Stop_Click"/>
+                        <MenuItem Header="Open in browser" Click="OpenBrowser_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="MakeMenu" Header="Make"/>
+                        <MenuItem x:Name="CommandsMenu" Header="All commands"/>
+                        <MenuItem Header="Run neo command…" InputGestureText="Ctrl+Shift+X" Click="RunNeoCommand_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Composer">
+                            <MenuItem Header="Manage packages…" Click="ManagePackages_Click"/>
+                            <Separator/>
+                            <MenuItem Header="install" Tag="install" Click="Composer_Click"/>
+                            <MenuItem Header="update" Tag="update" Click="Composer_Click"/>
+                            <MenuItem Header="dump-autoload" Tag="dump-autoload -o" Click="Composer_Click"/>
+                            <MenuItem Header="validate" Tag="validate" Click="Composer_Click"/>
+                            <MenuItem Header="outdated" Tag="outdated --direct" Click="Composer_Click"/>
+                            <Separator/>
+                            <MenuItem Header="require…" Click="ComposerRequire_Click"/>
+                            <MenuItem Header="require --dev…" Tag="dev" Click="ComposerRequire_Click"/>
+                        </MenuItem>
+                        <MenuItem Header="PHP interpreter…" Click="Interpreter_Click"/>
+                        <MenuItem Header="Re-index project" Click="Reindex_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="_Help">
+                        <MenuItem Header="NeoPHP documentation" Click="Docs_Click"/>
+                        <MenuItem Header="Keyboard shortcuts" Click="Shortcuts_Click"/>
+                        <MenuItem Header="Check for updates…" Click="CheckUpdates_Click"/>
+                        <MenuItem Header="Release notes" Click="ReleaseNotes_Click"/>
+                        <Separator/>
+                        <MenuItem Header="About NeoIDE" Click="About_Click"/>
+                    </MenuItem>
+                </Menu>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="10,0,0,0">
+                    <Button x:Name="ProjectWidget" Style="{StaticResource ToolButton}" 
+                        WindowChrome.IsHitTestVisibleInChrome="True" Click="ProjectWidget_Click" ToolTip="Recent projects">
+                    <StackPanel Orientation="Horizontal">
+                        <Border Width="20" Height="20" CornerRadius="4" Background="#3574F0" Margin="0,0,7,0">
+                            <TextBlock x:Name="ProjectInitials" Text="NP" Foreground="White" FontSize="9" FontWeight="Bold"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock x:Name="ProjectTitle" Text="NeoIDE" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <TextBlock Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="9" Margin="6,2,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource FgSecondary}"/>
+                    </StackPanel>
+                </Button>
+                    <Button x:Name="GitWidget" Style="{StaticResource ToolButton}" Margin="6,0,0,0" WindowChrome.IsHitTestVisibleInChrome="True"
+                            Click="GitWidget_Click" ToolTip="Git branches and actions">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8D4;" FontFamily="{StaticResource Icons}" FontSize="12" Margin="0,1,6,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource FgSecondary}"/>
+                            <TextBlock x:Name="BranchTitle" Text="Version control" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="BranchSync" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource FgSecondary}" FontSize="11.5"/>
+                            <TextBlock Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="9" Margin="6,2,0,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource FgSecondary}"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                    <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="RunNeoCommand_Click" ToolTip="Run a NeoPHP command (Ctrl+Shift+X)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE756;" FontFamily="{StaticResource Icons}" FontSize="13" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock Text="neo serve" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="RunButton" Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Run_Click" ToolTip="Run 'php bin/neo serve' (Shift+F10)">
+                        <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource SuccessFg}"/>
+                    </Button>
+                    <Button x:Name="StopButton" Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Stop_Click" IsEnabled="False" ToolTip="Stop (Ctrl+F2)">
+                        <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource ErrorFg}"/>
+                    </Button>
+                    <Border Width="1" Height="18" Background="{DynamicResource SubtleBorder}" Margin="6,0"/>
+                    <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="SearchEverywhere_Click" ToolTip="Search Everywhere (Double Shift)">
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                    </Button>
+                    <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="ToggleTheme_Click" ToolTip="Switch light/dark theme">
+                        <TextBlock Text="&#xE706;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                    </Button>
+                    <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Settings_Click" ToolTip="Settings (Ctrl+Alt+S)">
+                        <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Grid.Column="5" Orientation="Horizontal">
+                    <Button Style="{StaticResource TitleBarButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Minimize_Click">
+                        <TextBlock Text="&#xE921;" FontFamily="{StaticResource Icons}" FontSize="10"/>
+                    </Button>
+                    <Button Style="{StaticResource TitleBarButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Maximize_Click">
+                        <TextBlock x:Name="MaxGlyph" Text="&#xE922;" FontFamily="{StaticResource Icons}" FontSize="10"/>
+                    </Button>
+                    <Button Style="{StaticResource TitleBarCloseButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Close_Click">
+                        <TextBlock Text="&#xE8BB;" FontFamily="{StaticResource Icons}" FontSize="10"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- ================= Status bar ================= -->
+            <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="26" Background="{DynamicResource PanelBg}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0">
+                <DockPanel Margin="10,0">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="StatusUpdateButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="0,0,12,0" Click="CheckUpdates_Click"
+                                ToolTip="NeoIDE update" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE896;" FontFamily="{StaticResource Icons}" FontSize="11" Margin="0,1,5,0" Foreground="{DynamicResource Accent}"/>
+                                <TextBlock x:Name="StatusUpdate" Foreground="{DynamicResource Accent}"/>
+                            </StackPanel>
+                        </Button>
+                        <TextBlock x:Name="StatusIndex" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <Button x:Name="StatusBranchButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="0,0,10,0" Click="GitWidget_Click"
+                                ToolTip="Git branch" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8D4;" FontFamily="{StaticResource Icons}" FontSize="11" Margin="0,1,5,0" Style="{StaticResource SecondaryText}"/>
+                                <TextBlock x:Name="StatusBranch" Style="{StaticResource SecondaryText}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ZoomButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="0,0,10,0" Click="ResetZoom_Click"
+                                ToolTip="IDE zoom - click to reset (Ctrl+Alt+0)" Visibility="Collapsed">
+                            <TextBlock x:Name="StatusZoom" Style="{StaticResource SecondaryText}"/>
+                        </Button>
+                        <TextBlock x:Name="StatusPosition" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="StatusEol" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="StatusEncoding" Text="UTF-8" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="StatusIndent" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="StatusLanguage" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <Button Style="{StaticResource ToolButton}" Padding="4,0" Click="Interpreter_Click" ToolTip="PHP interpreter of the project">
+                            <TextBlock x:Name="StatusPhp" Text="PHP" Style="{StaticResource SecondaryText}"/>
+                        </Button>
+                    </StackPanel>
+                    <TextBlock x:Name="StatusMessage" Style="{StaticResource SecondaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+            </Border>
+
+            <!-- ================= Left tool strip ================= -->
+            <Border x:Name="ToolStrip" DockPanel.Dock="Left" Width="40" Background="{DynamicResource PanelBg}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,1,0">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top">
+                        <ToggleButton x:Name="ProjectToggle" Style="{StaticResource StripToggle}" IsChecked="True" Click="ProjectToggle_Click" ToolTip="Project (Alt+1)">
+                            <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource Icons}" FontSize="15"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="CommitToggle" Style="{StaticResource StripToggle}" Click="CommitToggle_Click" ToolTip="Commit (Alt+0)">
+                            <TextBlock Text="&#xE8D4;" FontFamily="{StaticResource Icons}" FontSize="15"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="StructureToggle" Style="{StaticResource StripToggle}" Click="StructureToggle_Click" ToolTip="Structure (Alt+7)">
+                            <TextBlock Text="&#xE8FD;" FontFamily="{StaticResource Icons}" FontSize="15"/>
+                        </ToggleButton>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
+                        <ToggleButton x:Name="RunToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="run" ToolTip="Run (Alt+4)">
+                            <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="TerminalToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="terminal" ToolTip="Terminal (Alt+F12)">
+                            <TextBlock Text="&#xE756;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="GitToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="git" ToolTip="Git log (Alt+9)">
+                            <TextBlock Text="&#xE81C;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="ProblemsToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="problems" ToolTip="Find results">
+                            <TextBlock Text="&#xE71E;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                        </ToggleButton>
+                    </StackPanel>
+                    <Border/>
+                </DockPanel>
+            </Border>
+
+            <!-- ================= Workspace ================= -->
+            <Grid x:Name="WorkspaceGrid">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition x:Name="BottomSplitterRow" Height="0"/>
+                    <RowDefinition x:Name="BottomRow" Height="0"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="SideColumn" Width="300" MinWidth="0"/>
+                    <ColumnDefinition x:Name="SideSplitterColumn" Width="1"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Project view -->
+                <DockPanel x:Name="ProjectPanel" Background="{DynamicResource PanelBg}">
+                    <DockPanel DockPanel.Dock="Top" Height="38" Margin="12,0,6,0">
+                        <StackPanel x:Name="ProjectActions" DockPanel.Dock="Right" Orientation="Horizontal">
+                            <Button Style="{StaticResource ToolButton}" Click="NewFile_Click" ToolTip="New… (Alt+Insert)">
+                                <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="12"/>
+                            </Button>
+                            <Button Style="{StaticResource ToolButton}" Click="SelectInProject_Click" ToolTip="Select opened file (Alt+F1)">
+                                <TextBlock Text="&#xE81D;" FontFamily="{StaticResource Icons}" FontSize="12"/>
+                            </Button>
+                            <Button Style="{StaticResource ToolButton}" Click="CollapseAll_Click" ToolTip="Collapse all">
+                                <TextBlock Text="&#xE7C2;" FontFamily="{StaticResource Icons}" FontSize="12"/>
+                            </Button>
+                            <Button Style="{StaticResource ToolButton}" Click="RefreshTree_Click" ToolTip="Reload from disk">
+                                <TextBlock Text="&#xE72C;" FontFamily="{StaticResource Icons}" FontSize="12"/>
+                            </Button>
+                        </StackPanel>
+                        <TextBlock x:Name="SidePanelTitle" Text="Project" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <Grid>
+                        <TreeView x:Name="ProjectTree" Padding="0,0,0,8"
+                                  MouseDoubleClick="ProjectTree_DoubleClick" KeyDown="ProjectTree_KeyDown"
+                                  PreviewMouseRightButtonDown="ProjectTree_RightDown" PreviewMouseLeftButtonDown="ProjectTree_PreviewMouseDown">
+                            <TreeView.ContextMenu>
+                                <ContextMenu x:Name="TreeMenu">
+                                    <MenuItem Header="New">
+                                        <MenuItem Header="PHP Class" Click="NewClass_Click"/>
+                                        <MenuItem Header="PHP File" Tag=".php" Click="NewTypedFile_Click"/>
+                                        <MenuItem Header="NeoPHP Controller" Tag="controller" Click="NewNeoTemplate_Click"/>
+                                        <MenuItem Header="NeoPHP Command" Tag="command" Click="NewNeoTemplate_Click"/>
+                                        <MenuItem Header="NeoPHP Template (view)" Tag="view" Click="NewNeoTemplate_Click"/>
+                                        <Separator/>
+                                        <MenuItem Header="File…" Click="NewFile_Click"/>
+                                        <MenuItem Header="Directory…" Click="NewDirectory_Click"/>
+                                        <MenuItem Header="YAML File" Tag=".yaml" Click="NewTypedFile_Click"/>
+                                        <MenuItem Header="Twig Template" Tag=".html.twig" Click="NewTypedFile_Click"/>
+                                        <MenuItem Header="JavaScript File" Tag=".js" Click="NewTypedFile_Click"/>
+                                        <MenuItem Header="Stylesheet" Tag=".css" Click="NewTypedFile_Click"/>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Header="Rename…" InputGestureText="Shift+F6" Click="Rename_Click"/>
+                                    <MenuItem Header="Delete…" InputGestureText="Delete" Click="Delete_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="Copy Path" InputGestureText="Ctrl+Shift+C" Click="CopyPath_Click"/>
+                                    <MenuItem Header="Copy Relative Path" Click="CopyRelativePath_Click"/>
+                                    <MenuItem Header="Open in Explorer" Click="Reveal_Click"/>
+                                    <MenuItem Header="Open in Terminal" Click="OpenInTerminal_Click"/>
+                                    <Separator/>
+                                    <MenuItem Header="Reload from Disk" Click="RefreshTree_Click"/>
+                                </ContextMenu>
+                            </TreeView.ContextMenu>
+                        </TreeView>
+                        <ListBox x:Name="StructureList" Visibility="Collapsed" MouseDoubleClick="StructureList_DoubleClick" Padding="4,0"/>
+                        <c:CommitPanel x:Name="CommitView" Visibility="Collapsed"/>
+                    </Grid>
+                </DockPanel>
+                <GridSplitter Grid.Column="1" Width="9" Margin="-4,0" HorizontalAlignment="Center" ResizeBehavior="PreviousAndNext"
+                              ResizeDirection="Columns" DragCompleted="Splitter_DragCompleted" ToolTip="Drag to resize"/>
+
+                <!-- Editors -->
+                <Grid Grid.Column="2" Background="{DynamicResource EditorBg}">
+                    <TabControl x:Name="EditorTabs" Style="{StaticResource EditorTabControl}" SelectionChanged="EditorTabs_SelectionChanged"
+                                BorderThickness="0" Padding="0"/>
+                    <StackPanel x:Name="EmptyEditorHint" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False">
+                        <TextBlock Text="Search Everywhere" Style="{StaticResource SecondaryText}" FontSize="14" Margin="0,4"><Run Text="   Double Shift" Foreground="{DynamicResource LinkFg}"/></TextBlock>
+                        <TextBlock Text="Go to File" Style="{StaticResource SecondaryText}" FontSize="14" Margin="0,4"><Run Text="   Ctrl+Shift+N" Foreground="{DynamicResource LinkFg}"/></TextBlock>
+                        <TextBlock Text="Go to Class" Style="{StaticResource SecondaryText}" FontSize="14" Margin="0,4"><Run Text="   Ctrl+N" Foreground="{DynamicResource LinkFg}"/></TextBlock>
+                        <TextBlock Text="New File" Style="{StaticResource SecondaryText}" FontSize="14" Margin="0,4"><Run Text="   Alt+Insert" Foreground="{DynamicResource LinkFg}"/></TextBlock>
+                        <TextBlock Text="Start the NeoPHP server" Style="{StaticResource SecondaryText}" FontSize="14" Margin="0,4"><Run Text="   Shift+F10" Foreground="{DynamicResource LinkFg}"/></TextBlock>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Bottom tool windows -->
+                <GridSplitter Grid.Row="1" Grid.ColumnSpan="3" Height="9" Margin="0,-4" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              ResizeBehavior="PreviousAndNext" ResizeDirection="Rows" DragCompleted="Splitter_DragCompleted"/>
+                <Border Grid.Row="2" Grid.ColumnSpan="3" Background="{DynamicResource PanelBg}">
+                    <TabControl x:Name="BottomTabs" Style="{StaticResource ToolTabControl}" BorderThickness="0">
+                        <TabControl.Tag>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,6,0">
+                                <Button Style="{StaticResource ToolButton}" Click="ClearConsole_Click" ToolTip="Clear">
+                                    <TextBlock Text="&#xE74D;" FontFamily="{StaticResource Icons}" FontSize="12"/>
+                                </Button>
+                                <Button Style="{StaticResource ToolButton}" Click="HideBottom_Click" ToolTip="Hide">
+                                    <TextBlock Text="&#xE921;" FontFamily="{StaticResource Icons}" FontSize="12"/>
+                                </Button>
+                            </StackPanel>
+                        </TabControl.Tag>
+                        <TabItem x:Name="RunTab" Header="Run" Style="{StaticResource ToolTabItem}">
+                            <c:ConsoleView x:Name="RunConsole"/>
+                        </TabItem>
+                        <TabItem x:Name="TerminalTab" Header="Terminal" Style="{StaticResource ToolTabItem}">
+                            <TabControl x:Name="TerminalTabs" Style="{StaticResource ToolTabControl}" BorderThickness="0">
+                                <TabControl.Tag>
+                                    <Button Style="{StaticResource ToolButton}" Margin="0,0,6,0" Click="NewTerminalMenu_Click" ToolTip="New terminal session">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE710;" FontFamily="{StaticResource Icons}" FontSize="11" VerticalAlignment="Center"/>
+                                            <TextBlock Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="8" Margin="4,1,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </TabControl.Tag>
+                            </TabControl>
+                        </TabItem>
+                        <TabItem x:Name="GitTab" Header="Git" Style="{StaticResource ToolTabItem}">
+                            <c:GitLogPanel x:Name="GitLogView"/>
+                        </TabItem>
+                        <TabItem x:Name="FindTab" Header="Find" Style="{StaticResource ToolTabItem}">
+                            <ListBox x:Name="FindResults" FontFamily="{StaticResource CodeFont}" FontSize="12.5" MouseDoubleClick="FindResults_DoubleClick"
+                                     VirtualizingPanel.IsVirtualizing="True"/>
+                        </TabItem>
+                    </TabControl>
+                </Border>
+            </Grid>
+        </DockPanel>
+    </Border>
+</Window>

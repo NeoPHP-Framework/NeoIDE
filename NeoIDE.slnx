@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="NeoIDE.Tests/NeoIDE.Tests.csproj" />
+  <Project Path="NeoIDE/NeoIDE.csproj" />
+</Solution>

@@ -1,0 +1,147 @@
+<d:DialogWindow x:Class="NeoIDE.Dialogs.NewProjectWindow"
+                xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                xmlns:d="clr-namespace:NeoIDE.Dialogs"
+                xmlns:c="clr-namespace:NeoIDE.Controls"
+                Title="New Project" SizeToContent="Manual" Width="900" Height="700">
+    <DockPanel>
+        <!-- Footer -->
+        <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="0,1,0,0" Padding="18,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="CancelButton" Content="Cancel" Margin="0,0,8,0" Click="Cancel_Click"/>
+                    <Button x:Name="CreateButton" Content="Create" Style="{StaticResource PrimaryButton}" IsDefault="True" Click="Create_Click"/>
+                </StackPanel>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Style="{StaticResource SecondaryText}" TextTrimming="CharacterEllipsis"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Left: generators -->
+        <Border DockPanel.Dock="Left" Width="210" Background="{DynamicResource WelcomeSideBg}" BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="0,0,1,0">
+            <StackPanel Margin="8,4">
+                <TextBlock Text="Generators" Style="{StaticResource SecondaryText}" Margin="10,8,0,6" FontSize="12"/>
+                <ListBox x:Name="TypeList" SelectedIndex="0">
+                    <ListBoxItem>
+                        <StackPanel Orientation="Horizontal">
+                            <Image Source="{StaticResource NeoLogo}" Width="18" Height="18" Margin="0,0,8,0"/>
+                            <TextBlock Text="NeoPHP Application" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ListBoxItem>
+                </ListBox>
+            </StackPanel>
+        </Border>
+
+        <!-- Form / progress -->
+        <Grid>
+            <ScrollViewer x:Name="FormScroll" VerticalScrollBarVisibility="Auto" Padding="24,8,24,16">
+                <StackPanel>
+                    <TextBlock Text="NeoPHP Application" FontSize="18" FontWeight="SemiBold" Margin="0,6,0,2"/>
+                    <TextBlock Text="Creates a project with composer create-project neophp/skeleton, configured for the PHP version you choose."
+                               Style="{StaticResource SecondaryText}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Text="Name:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="NameBox" Grid.Column="1" Grid.ColumnSpan="2" Text="my-neo-app" Margin="0,4" TextChanged="Form_Changed"/>
+
+                        <TextBlock Grid.Row="1" Text="Location:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="LocationBox" Grid.Row="1" Grid.Column="1" Margin="0,4" TextChanged="Form_Changed"/>
+                        <Button Grid.Row="1" Grid.Column="2" Content="Browse…" Margin="8,4,0,4" MinWidth="0" Click="Browse_Click"/>
+
+                        <TextBlock x:Name="PathPreview" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Style="{StaticResource SecondaryText}"
+                                   FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap"/>
+
+                        <TextBlock Grid.Row="3" Text="PHP interpreter:" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="PhpCombo" Grid.Row="3" Grid.Column="1" Margin="0,4" SelectionChanged="Php_Changed"/>
+                        <Button Grid.Row="3" Grid.Column="2" Content="Add…" Margin="8,4,0,4" MinWidth="0" Click="AddPhp_Click"/>
+
+                        <TextBlock Grid.Row="4" Text="NeoPHP version:" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="VersionCombo" Grid.Row="4" Grid.Column="1" Margin="0,4"/>
+                        <TextBlock x:Name="VersionHint" Grid.Row="4" Grid.Column="2" Margin="8,0,0,0" VerticalAlignment="Center" Style="{StaticResource SecondaryText}" FontSize="12"/>
+                    </Grid>
+
+                    <TextBlock Text="Composer" Style="{StaticResource SectionTitle}" Margin="0,18,0,6"/>
+                    <Border Height="1" Background="{DynamicResource SubtleBorder}" Margin="0,0,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Package name:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="PackageBox" Grid.Column="1" Margin="0,4"/>
+                        <TextBlock Grid.Column="3" Text="PHP constraint:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="ConstraintBox" Grid.Column="4" Margin="0,4"/>
+
+                        <TextBlock Grid.Row="1" Text="Description:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="DescriptionBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="4" Margin="0,4"/>
+
+                        <TextBlock Grid.Row="2" Text="Author:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="AuthorBox" Grid.Row="2" Grid.Column="1" Margin="0,4"/>
+                        <TextBlock Grid.Row="2" Grid.Column="3" Text="E-mail:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="EmailBox" Grid.Row="2" Grid.Column="4" Margin="0,4"/>
+                    </Grid>
+
+                    <TextBlock Text="Application (.env)" Style="{StaticResource SectionTitle}" Margin="0,18,0,6"/>
+                    <Border Height="1" Background="{DynamicResource SubtleBorder}" Margin="0,0,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="110"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="APP_NAME:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="AppNameBox" Grid.Column="1" Margin="0,4"/>
+                        <TextBlock Grid.Column="3" Text="Server port:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="PortBox" Grid.Column="4" Margin="0,4" Text="8000"/>
+                        <TextBlock Grid.Row="1" Text="APP_TIMEZONE:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="TimezoneBox" Grid.Row="1" Grid.Column="1" Margin="0,4"/>
+                    </Grid>
+
+                    <TextBlock Text="Options" Style="{StaticResource SectionTitle}" Margin="0,18,0,6"/>
+                    <Border Height="1" Background="{DynamicResource SubtleBorder}" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="GitCheck" Content="Create Git repository" IsChecked="True" Margin="0,4"/>
+                    <CheckBox x:Name="CommitCheck" Content="Make an initial commit" IsChecked="True" Margin="24,4,0,4"
+                              IsEnabled="{Binding IsChecked, ElementName=GitCheck}"/>
+                    <CheckBox x:Name="DoctorCheck" Content="Run 'neo doctor' after creation" IsChecked="True" Margin="0,4"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <DockPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="16,8,16,12">
+                <StackPanel DockPanel.Dock="Top" Margin="0,4,0,10">
+                    <TextBlock x:Name="ProgressTitle" Text="Creating project…" FontSize="16" FontWeight="SemiBold"/>
+                    <ProgressBar x:Name="Progress" Height="4" Margin="0,10,0,0" Minimum="0" Maximum="7" Foreground="{DynamicResource Accent}"
+                                 Background="{DynamicResource SubtleBorder}" BorderThickness="0"/>
+                </StackPanel>
+                <Border BorderBrush="{DynamicResource SubtleBorder}" BorderThickness="1" CornerRadius="4">
+                    <c:ConsoleView x:Name="Log"/>
+                </Border>
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</d:DialogWindow>

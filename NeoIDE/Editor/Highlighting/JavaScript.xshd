@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="JavaScript" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet>
+    <Span color="DocComment" multiline="true" begin="/\*\*" end="\*/">
+      <RuleSet><Rule color="DocTag">@\w+</Rule></RuleSet>
+    </Span>
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/"/>
+    <Span color="Comment" begin="//" end="$"/>
+    <Span color="String" begin="&quot;" end="&quot;">
+      <RuleSet><Span color="StringEscape" begin="\\" end="."/></RuleSet>
+    </Span>
+    <Span color="String" begin="'" end="'">
+      <RuleSet><Span color="StringEscape" begin="\\" end="."/></RuleSet>
+    </Span>
+    <Span color="String" multiline="true" begin="`" end="`">
+      <RuleSet>
+        <Span color="StringEscape" begin="\\" end="."/>
+        <Span color="Default" begin="\$\{" end="\}"/>
+      </RuleSet>
+    </Span>
+    <Rule color="String">(?&lt;=[=(,:;!&amp;|?{}\[]\s*)/(?![*/])(\\.|[^/\\\n])+/[gimsuyd]*</Rule>
+
+    <Keywords color="Keyword">
+      <Word>break</Word><Word>case</Word><Word>catch</Word><Word>class</Word><Word>const</Word><Word>continue</Word>
+      <Word>debugger</Word><Word>default</Word><Word>delete</Word><Word>do</Word><Word>else</Word><Word>export</Word>
+      <Word>extends</Word><Word>finally</Word><Word>for</Word><Word>function</Word><Word>if</Word><Word>import</Word>
+      <Word>in</Word><Word>instanceof</Word><Word>let</Word><Word>new</Word><Word>return</Word><Word>super</Word>
+      <Word>switch</Word><Word>this</Word><Word>throw</Word><Word>try</Word><Word>typeof</Word><Word>var</Word>
+      <Word>void</Word><Word>while</Word><Word>with</Word><Word>yield</Word><Word>async</Word><Word>await</Word>
+      <Word>of</Word><Word>static</Word><Word>get</Word><Word>set</Word><Word>from</Word><Word>as</Word>
+      <Word>true</Word><Word>false</Word><Word>null</Word><Word>undefined</Word><Word>NaN</Word><Word>Infinity</Word>
+      <Word>interface</Word><Word>type</Word><Word>enum</Word><Word>implements</Word><Word>private</Word>
+      <Word>public</Word><Word>protected</Word><Word>readonly</Word><Word>abstract</Word><Word>declare</Word>
+      <Word>namespace</Word><Word>keyof</Word><Word>number</Word><Word>string</Word><Word>boolean</Word>
+      <Word>any</Word><Word>unknown</Word><Word>never</Word>
+    </Keywords>
+    <Keywords color="Builtin">
+      <Word>console</Word><Word>window</Word><Word>document</Word><Word>Math</Word><Word>JSON</Word>
+      <Word>Promise</Word><Word>Object</Word><Word>Array</Word><Word>String</Word><Word>Number</Word>
+      <Word>Boolean</Word><Word>Date</Word><Word>RegExp</Word><Word>Error</Word><Word>Map</Word><Word>Set</Word>
+      <Word>fetch</Word><Word>require</Word><Word>module</Word><Word>exports</Word><Word>process</Word>
+    </Keywords>
+
+    <Rule color="Function">(?&lt;=\bfunction\s*\*?\s*)[A-Za-z_$][\w$]*</Rule>
+    <Rule color="Type">(?&lt;=\b(class|extends|new)\s+)[A-Za-z_$][\w$.]*</Rule>
+    <Rule color="FunctionCall">(?&lt;=\.)[A-Za-z_$][\w$]*(?=\s*\()</Rule>
+    <Rule color="Property">(?&lt;=\.)[A-Za-z_$][\w$]*</Rule>
+    <Rule color="Function">\b[A-Za-z_$][\w$]*(?=\s*\()</Rule>
+    <Rule color="Constant">\b[A-Z][A-Z0-9_]{2,}\b</Rule>
+    <Rule color="Number">\b0[xX][0-9a-fA-F_]+n?|\b\d[\d_]*(\.\d+)?([eE][+-]?\d+)?n?</Rule>
+  </RuleSet>
+</SyntaxDefinition>

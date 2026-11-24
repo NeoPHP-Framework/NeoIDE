@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="HTML" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet>
+    <Import ruleSet="HtmlMain"/>
+  </RuleSet>
+<!--BEGIN-->
+  <RuleSet name="HtmlMain" ignoreCase="true">
+    <Span color="Comment" multiline="true" begin="&lt;!--" end="--&gt;"/>
+    <Span color="Tag" multiline="true" begin="&lt;!\[CDATA\[" end="\]\]&gt;"/>
+    <Span color="Tag" begin="&lt;!DOCTYPE" end="&gt;"/>
+    <Span ruleSet="JavaScript/" multiline="true">
+      <Begin color="Tag">&lt;script(?=[\s&gt;])[^&gt;]*&gt;</Begin>
+      <End color="Tag">&lt;/script\s*&gt;</End>
+    </Span>
+    <Span ruleSet="CSS/" multiline="true">
+      <Begin color="Tag">&lt;style(?=[\s&gt;])[^&gt;]*&gt;</Begin>
+      <End color="Tag">&lt;/style\s*&gt;</End>
+    </Span>
+    <Span ruleSet="HtmlTag" multiline="true">
+      <Begin color="Tag">&lt;/?[A-Za-z][\w:.-]*</Begin>
+      <End color="Tag">/?&gt;</End>
+    </Span>
+    <Rule color="Entity">&amp;[\w#]+;</Rule>
+  </RuleSet>
+  <RuleSet name="HtmlTag">
+    <!--EMBED-->
+    <Span color="AttributeValue" multiline="true" ruleSet="HtmlAttr" begin="&quot;" end="&quot;"/>
+    <Span color="AttributeValue" multiline="true" ruleSet="HtmlAttr" begin="'" end="'"/>
+    <Rule color="Attribute">[\w:@.\-\[\]()#*]+</Rule>
+  </RuleSet>
+  <RuleSet name="HtmlAttr">
+    <!--EMBED-->
+    <Rule color="Entity">&amp;[\w#]+;</Rule>
+  </RuleSet>
+<!--END-->
+</SyntaxDefinition>

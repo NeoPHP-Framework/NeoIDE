@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="CSS" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet ignoreCase="true">
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/"/>
+    <Span color="Comment" begin="//" end="$"/>
+    <Span color="String" begin="&quot;" end="&quot;"/>
+    <Span color="String" begin="'" end="'"/>
+    <Rule color="Keyword">@[\w-]+</Rule>
+    <Rule color="Variable">\$[\w-]+|--[\w-]+</Rule>
+    <Span ruleSet="CssBlock" multiline="true" begin="\{" end="\}"/>
+    <Rule color="Selector">[.#]?-?[A-Za-z_][\w-]*</Rule>
+    <Rule color="Keyword">::?[\w-]+</Rule>
+  </RuleSet>
+
+  <RuleSet name="CssBlock" ignoreCase="true">
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/"/>
+    <Span color="Comment" begin="//" end="$"/>
+    <Span ruleSet="CssBlock" multiline="true" begin="\{" end="\}"/>
+    <Span ruleSet="CssValue" multiline="true">
+      <Begin>:(?!:)(?![\w-]+\s*[\{,])</Begin>
+      <End>;|(?=\})</End>
+    </Span>
+    <Rule color="Keyword">@[\w-]+</Rule>
+    <Rule color="Variable">\$[\w-]+|--[\w-]+</Rule>
+    <Rule color="CssProperty">-?[A-Za-z][\w-]*(?=\s*:)</Rule>
+    <Rule color="Selector">[&amp;.#]?-?[A-Za-z_][\w-]*</Rule>
+  </RuleSet>
+
+  <RuleSet name="CssValue" ignoreCase="true">
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/"/>
+    <Span color="String" begin="&quot;" end="&quot;"/>
+    <Span color="String" begin="'" end="'"/>
+    <Rule color="Keyword">!important</Rule>
+    <Rule color="Number">\#[0-9a-fA-F]{3,8}\b</Rule>
+    <Rule color="Number">-?\d*\.?\d+(px|em|rem|%|vh|vw|s|ms|deg|fr|pt|ch|ex|vmin|vmax|dpi|dppx)?\b</Rule>
+    <Rule color="Variable">\$[\w-]+|--[\w-]+</Rule>
+    <Rule color="FunctionCall">[\w-]+(?=\()</Rule>
+    <Rule color="CssValue">[A-Za-z][\w-]*</Rule>
+  </RuleSet>
+</SyntaxDefinition>

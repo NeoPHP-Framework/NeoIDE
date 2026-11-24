@@ -1,0 +1,97 @@
+name: Release
+
+# Push a tag to publish a version:   git tag v0.2.0 && git push origin v0.2.0
+# Pre-release (beta channel):        git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.2.0)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags + history for the release notes
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $v = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ github.event.inputs.version }}" } else { "${{ github.ref_name }}" }
+          $v = $v.TrimStart("v")
+          if ($v -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { throw "Invalid version '$v' (expected 1.2.3 or 1.2.3-beta.1)" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          "prerelease=$(if ($v.Contains('-')) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+          Write-Host "NeoIDE $v"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "11.0.x"
+
+      - name: Tests
+        shell: pwsh
+        run: dotnet build NeoIDE.Tests/NeoIDE.Tests.csproj -c Release -nologo
+
+      - name: Publish
+        shell: pwsh
+        run: dotnet publish NeoIDE/NeoIDE.csproj -p:PublishProfile=Velopack-win-x64 -p:Version=${{ steps.version.outputs.version }} -nologo
+
+      - name: Install vpk
+        shell: pwsh
+        run: dotnet tool install -g vpk --version 1.2.161
+
+      # Previous release: vpk computes the delta package (only the changed files) against it.
+      - name: Download previous release
+        shell: pwsh
+        env:
+          DOTNET_ROLL_FORWARD: Major
+        run: |
+          vpk download github --repoUrl "${{ github.server_url }}/${{ github.repository }}" --token "${{ secrets.GITHUB_TOKEN }}" -o Releases ${{ steps.version.outputs.prerelease == 'true' && '--pre' || '' }}
+          if ($LASTEXITCODE -ne 0) { Write-Host "No previous release: full package only."; $global:LASTEXITCODE = 0 }
+
+      - name: Release notes
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.version }}"
+          $prev = git describe --tags --abbrev=0 "HEAD^" 2>$null
+          $range = if ($prev) { "$prev..HEAD" } else { "HEAD" }
+          $lines = git log $range --pretty=format:"- %s" --no-merges | Where-Object { $_ -notmatch '^- (Merge|Release) ' }
+          $notes = "## NeoIDE $v`n`n" + ($(if ($lines) { $lines -join "`n" } else { "- Maintenance release" }))
+          if ($prev) { $notes += "`n`n[All changes]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/compare/$prev...v$v)" }
+          [IO.File]::WriteAllText("release-notes.md", $notes)
+          Get-Content release-notes.md
+
+      - name: Pack
+        shell: pwsh
+        env:
+          DOTNET_ROLL_FORWARD: Major
+        run: >
+          vpk pack -u NeoIDE -v ${{ steps.version.outputs.version }} -p dist/publish -e NeoIDE.exe
+          -i NeoIDE/Resources/neoide.ico --packTitle NeoIDE --packAuthors NeoPHP
+          --releaseNotes release-notes.md -o Releases
+
+      - name: Upload to GitHub Releases
+        shell: pwsh
+        env:
+          DOTNET_ROLL_FORWARD: Major
+        run: >
+          vpk upload github -o Releases --repoUrl "${{ github.server_url }}/${{ github.repository }}"
+          --token "${{ secrets.GITHUB_TOKEN }}" --publish --merge
+          --releaseName "NeoIDE ${{ steps.version.outputs.version }}" --tag v${{ steps.version.outputs.version }}
+          ${{ steps.version.outputs.prerelease == 'true' && '--pre' || '' }}

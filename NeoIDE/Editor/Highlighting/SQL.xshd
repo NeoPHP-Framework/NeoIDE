@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="SQL" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet ignoreCase="true">
+    <Span color="Comment" multiline="true" begin="/\*" end="\*/"/>
+    <Span color="Comment" begin="--" end="$"/>
+    <Span color="Comment" begin="\#" end="$"/>
+    <Span color="String" begin="'" end="'"/>
+    <Span color="JsonKey" begin="`" end="`"/>
+    <Span color="JsonKey" begin="&quot;" end="&quot;"/>
+    <Keywords color="Keyword">
+      <Word>select</Word><Word>from</Word><Word>where</Word><Word>and</Word><Word>or</Word><Word>not</Word>
+      <Word>insert</Word><Word>into</Word><Word>values</Word><Word>update</Word><Word>set</Word><Word>delete</Word>
+      <Word>create</Word><Word>table</Word><Word>alter</Word><Word>drop</Word><Word>index</Word><Word>view</Word>
+      <Word>join</Word><Word>left</Word><Word>right</Word><Word>inner</Word><Word>outer</Word><Word>on</Word>
+      <Word>as</Word><Word>order</Word><Word>by</Word><Word>group</Word><Word>having</Word><Word>limit</Word>
+      <Word>offset</Word><Word>distinct</Word><Word>union</Word><Word>all</Word><Word>null</Word><Word>is</Word>
+      <Word>in</Word><Word>like</Word><Word>between</Word><Word>exists</Word><Word>case</Word><Word>when</Word>
+      <Word>then</Word><Word>else</Word><Word>end</Word><Word>primary</Word><Word>key</Word><Word>foreign</Word>
+      <Word>references</Word><Word>default</Word><Word>unique</Word><Word>constraint</Word><Word>if</Word>
+      <Word>auto_increment</Word><Word>engine</Word><Word>charset</Word><Word>collate</Word><Word>add</Word>
+      <Word>column</Word><Word>database</Word><Word>schema</Word><Word>begin</Word><Word>commit</Word>
+      <Word>rollback</Word><Word>transaction</Word><Word>asc</Word><Word>desc</Word><Word>true</Word><Word>false</Word>
+      <Word>int</Word><Word>integer</Word><Word>bigint</Word><Word>smallint</Word><Word>tinyint</Word><Word>varchar</Word>
+      <Word>char</Word><Word>text</Word><Word>longtext</Word><Word>datetime</Word><Word>timestamp</Word><Word>date</Word>
+      <Word>boolean</Word><Word>decimal</Word><Word>float</Word><Word>double</Word><Word>json</Word><Word>unsigned</Word>
+    </Keywords>
+    <Rule color="FunctionCall">\b\w+(?=\s*\()</Rule>
+    <Rule color="Variable">[:@]\w+|\?</Rule>
+    <Rule color="Number">\b\d+(\.\d+)?</Rule>
+  </RuleSet>
+</SyntaxDefinition>

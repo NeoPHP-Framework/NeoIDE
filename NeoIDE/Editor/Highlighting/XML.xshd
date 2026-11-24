@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="XML" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <!--COLORS-->
+  <RuleSet>
+    <Span color="Comment" multiline="true" begin="&lt;!--" end="--&gt;"/>
+    <Span color="String" multiline="true" begin="&lt;!\[CDATA\[" end="\]\]&gt;"/>
+    <Span color="Metadata" multiline="true" begin="&lt;\?" end="\?&gt;"/>
+    <Span color="Tag" multiline="true" begin="&lt;!DOCTYPE" end="&gt;"/>
+    <Span ruleSet="XmlTag" multiline="true">
+      <Begin color="Tag">&lt;/?[\w:.-]+</Begin>
+      <End color="Tag">/?&gt;</End>
+    </Span>
+    <Rule color="Entity">&amp;[\w#]+;</Rule>
+  </RuleSet>
+  <RuleSet name="XmlTag">
+    <Span color="AttributeValue" multiline="true" begin="&quot;" end="&quot;"/>
+    <Span color="AttributeValue" multiline="true" begin="'" end="'"/>
+    <Rule color="Attribute">[\w:.-]+</Rule>
+  </RuleSet>
+</SyntaxDefinition>
