@@ -242,8 +242,13 @@
                     <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="ToggleTheme_Click" ToolTip="Switch light/dark theme">
                         <TextBlock Text="&#xE706;" FontFamily="{StaticResource Icons}" FontSize="14"/>
                     </Button>
-                    <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Settings_Click" ToolTip="Settings (Ctrl+Alt+S)">
-                        <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                    <Button x:Name="SettingsButton" Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Settings_Click" ToolTip="Settings (Ctrl+Alt+S)">
+                        <Grid>
+                            <TextBlock Text="&#xE713;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                            <!-- updates available (NeoIDE, plugins, themes) -->
+                            <Border x:Name="SettingsBadge" Visibility="Collapsed" MinWidth="9" Height="9" CornerRadius="4.5" Background="#E8553D"
+                                    BorderBrush="{DynamicResource TitleBarBg}" BorderThickness="1.5" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-5,0"/>
+                        </Grid>
                     </Button>
                 </StackPanel>
 

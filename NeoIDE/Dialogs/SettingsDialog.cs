@@ -44,10 +44,12 @@ public sealed class SettingsDialog : DialogWindow
         _pages["New projects"] = BuildProjects();
         _pages["Updates"] = BuildUpdates();
 
-        foreach (var name in _pages.Keys) _nav.Items.Add(new ListBoxItem { Content = name });
+        foreach (var name in _pages.Keys) _nav.Items.Add(new ListBoxItem { Content = NavLabel(name), Tag = name });
+        AvailableUpdates.Changed += RefreshNav;
+        Closed += (_, _) => AvailableUpdates.Changed -= RefreshNav;
         _nav.SelectionChanged += (_, _) =>
         {
-            if (_nav.SelectedItem is ListBoxItem { Content: string n }) _host.Content = new ScrollViewer { Content = _pages[n], VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(24, 6, 24, 12) };
+            if (_nav.SelectedItem is ListBoxItem { Tag: string n }) _host.Content = new ScrollViewer { Content = _pages[n], VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(24, 6, 24, 12) };
         };
 
         var ok = Primary("OK");
@@ -82,6 +84,60 @@ public sealed class SettingsDialog : DialogWindow
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>Name of a page + a pill with the number of updates (NeoIDE, plugins, themes).</summary>
+    private static FrameworkElement NavLabel(string page)
+    {
+        var count = page switch
+        {
+            "Updates" => AvailableUpdates.Ide ? 1 : 0,
+            "Plugins" => AvailableUpdates.Plugins.Count,
+            "Themes" => AvailableUpdates.Themes.Count,
+            _ => 0,
+        };
+        var dock = new DockPanel { LastChildFill = true };
+        if (count > 0)
+        {
+            var pill = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(0xE8, 0x55, 0x3D)), CornerRadius = new CornerRadius(8), Padding = new Thickness(6, 0, 6, 1),
+                Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock { Text = page == "Updates" ? "new" : count.ToString(), Foreground = Brushes.White, FontSize = 11, FontWeight = FontWeights.SemiBold },
+                ToolTip = page == "Updates" ? $"NeoIDE {UpdateService.AvailableVersion} is available" : $"{count} update(s) available",
+            };
+            DockPanel.SetDock(pill, Dock.Right);
+            dock.Children.Add(pill);
+        }
+        dock.Children.Add(new TextBlock { Text = page, VerticalAlignment = VerticalAlignment.Center });
+        return dock;
+    }
+
+    private void RefreshNav()
+    {
+        foreach (ListBoxItem item in _nav.Items) item.Content = NavLabel((string)item.Tag);
+    }
+
+    /// <summary>Search field with a hint and a magnifier.</summary>
+    private static FrameworkElement SearchBox(string hint, Action<string> changed)
+    {
+        var box = new TextBox { Padding = new Thickness(26, 4, 6, 4) };
+        var placeholder = new TextBlock { Text = hint, Foreground = ThemeManager.Brush("FgSecondary"), Margin = new Thickness(29, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        var icon = new TextBlock { Text = "\uE721", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 12, Foreground = ThemeManager.Brush("FgSecondary"), Margin = new Thickness(9, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        box.TextChanged += (_, _) =>
+        {
+            placeholder.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            changed(box.Text.Trim());
+        };
+        box.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape && box.Text.Length > 0) { box.Text = ""; e.Handled = true; } };
+        var grid = new Grid { Margin = new Thickness(0, 10, 0, 0), MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Left, Width = 420 };
+        grid.Children.Add(box);
+        grid.Children.Add(placeholder);
+        grid.Children.Add(icon);
+        return grid;
+    }
+
+    private static bool Matches(string query, params string?[] fields) =>
+        query.Length == 0 || query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => fields.Any(f => f?.Contains(word, StringComparison.OrdinalIgnoreCase) == true));
 
     private static TextBlock Section(string text) => new()
     {
@@ -149,6 +205,7 @@ public sealed class SettingsDialog : DialogWindow
         head.Children.Add(title);
         p.Children.Add(head);
         p.Children.Add(Hint("A theme colours the whole IDE: interface, editor and syntax. Click to apply (Cancel restores the previous one). Themes are JSON files."));
+        p.Children.Add(SearchBox("Search themes: name, dark, light…", q => { _themeQuery = q; RefreshThemes(); }));
         _installedThemes = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
         p.Children.Add(_installedThemes);
 
@@ -176,11 +233,14 @@ public sealed class SettingsDialog : DialogWindow
         return p;
     }
 
+    private string _themeQuery = "", _pluginQuery = "";
+
     private async Task LoadMarketplaceAsync()
     {
         try
         {
             _index = await Marketplace.FetchIndexAsync();
+            AvailableUpdates.SetIndex(_index);
             _marketStatus.Text = $"{_index.Themes.Count} theme(s) on {Marketplace.RepositoryUrl}";
         }
         catch (Exception ex)
@@ -195,7 +255,7 @@ public sealed class SettingsDialog : DialogWindow
     private void RefreshThemes()
     {
         _installedThemes.Children.Clear();
-        foreach (var theme in Editor.ThemeCatalog.All)
+        foreach (var theme in Editor.ThemeCatalog.All.Where(t => Matches(_themeQuery, t.Name, t.Id, t.Description, t.IsDark ? "dark" : "light", t.Author)))
         {
             var actions = new List<(string, Action)>();
             if (!theme.IsBundled)
@@ -216,7 +276,7 @@ public sealed class SettingsDialog : DialogWindow
 
         _marketThemes.Children.Clear();
         if (_index == null) return;
-        foreach (var item in _index.Themes.Where(m => Editor.ThemeCatalog.Find(m.Id) == null))
+        foreach (var item in _index.Themes.Where(m => Editor.ThemeCatalog.Find(m.Id) == null && Matches(_themeQuery, m.Name, m.Id, m.Description, m.Dark ? "dark" : "light", m.Author)))
         {
             Color C(string hex) => ColorConverter.ConvertFromString(hex) is Color c ? c : Colors.Gray;
             var pv = item.Preview;
@@ -226,7 +286,7 @@ public sealed class SettingsDialog : DialogWindow
                 new List<(string, Action)> { ("Install", () => _ = InstallFromMarketplace(item)) }, item.Description));
         }
         if (_marketThemes.Children.Count == 0)
-            _marketThemes.Children.Add(Hint("All the marketplace themes are installed."));
+            _marketThemes.Children.Add(Hint(_themeQuery.Length > 0 ? $"No marketplace theme matches \"{_themeQuery}\"." : "All the marketplace themes are installed."));
     }
 
     private async Task InstallFromMarketplace(MarketplaceItem item)
@@ -432,6 +492,7 @@ public sealed class SettingsDialog : DialogWindow
         head.Children.Add(title);
         p.Children.Add(head);
         p.Children.Add(Hint("Plugins add tool windows and commands to NeoIDE. They run with your permissions: install only plugins you trust."));
+        p.Children.Add(SearchBox("Search plugins: name, database, http, logs…", q => { _pluginQuery = q; RefreshPlugins(); }));
 
         var restart = new Button { Content = "Restart now", Style = (Style)FindResource("PrimaryButton"), MinWidth = 0, Padding = new Thickness(10, 2, 10, 2) };
         restart.Click += (_, _) => { Commit(); DialogResult = true; App.Restart(); };
@@ -483,7 +544,7 @@ public sealed class SettingsDialog : DialogWindow
     {
         _restartBanner.Visibility = Services.Plugins.PluginManager.RestartRequired ? Visibility.Visible : Visibility.Collapsed;
         _installedPlugins.Children.Clear();
-        foreach (var plugin in Services.Plugins.PluginManager.Installed.OrderBy(x => x.Manifest.Name))
+        foreach (var plugin in Services.Plugins.PluginManager.Installed.Where(x => Matches(_pluginQuery, x.Manifest.Name, x.Id, x.Manifest.Description)).OrderBy(x => x.Manifest.Name))
         {
             var m = plugin.Manifest;
             var (state, stateKey) = plugin.State switch
@@ -511,12 +572,12 @@ public sealed class SettingsDialog : DialogWindow
             }
             _installedPlugins.Children.Add(PluginRow(m.Icon, m.Name, $"v{m.Version} · {m.Author}", m.Description, state, stateKey, actions));
         }
-        if (_installedPlugins.Children.Count == 0) _installedPlugins.Children.Add(Hint("No plugin installed yet: pick one in the marketplace below."));
+        if (_installedPlugins.Children.Count == 0) _installedPlugins.Children.Add(Hint(_pluginQuery.Length > 0 ? "No installed plugin matches the search." : "No plugin installed yet: pick one in the marketplace below."));
 
         _marketPlugins.Children.Clear();
         if (_index == null) return;
         _pluginStatus.Text = $"{_index.Plugins.Count} plugin(s) on {Marketplace.RepositoryUrl}";
-        foreach (var item in _index.Plugins.Where(x => Services.Plugins.PluginManager.Find(x.Id) == null).OrderBy(x => x.Name))
+        foreach (var item in _index.Plugins.Where(x => Services.Plugins.PluginManager.Find(x.Id) == null && Matches(_pluginQuery, new[] { x.Name, x.Id, x.Description }.Concat(x.Tags).ToArray())).OrderBy(x => x.Name))
         {
             var compatible = item.Sdk == NeoIDE.Sdk.SdkInfo.Version;
             var actions = new List<FrameworkElement>();
@@ -524,7 +585,7 @@ public sealed class SettingsDialog : DialogWindow
             _marketPlugins.Children.Add(PluginRow(item.Icon, item.Name, $"v{item.Version} · {item.Author}", item.Description,
                 compatible ? null : "Requires another version of NeoIDE", "WarnFg", actions));
         }
-        if (_marketPlugins.Children.Count == 0) _marketPlugins.Children.Add(Hint("All the marketplace plugins are installed."));
+        if (_marketPlugins.Children.Count == 0) _marketPlugins.Children.Add(Hint(_pluginQuery.Length > 0 ? "No marketplace plugin matches the search." : "All the marketplace plugins are installed."));
     }
 
     private Button PluginButton(string text, bool primary, Action<Button> click)

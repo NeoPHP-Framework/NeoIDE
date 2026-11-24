@@ -62,6 +62,9 @@ public partial class MainWindow : Window, IIdeShell
         UpdateService.Changed += RefreshUpdateStatus;
         Closed += (_, _) => UpdateService.Changed -= RefreshUpdateStatus;
         RefreshUpdateStatus();
+        AvailableUpdates.Changed += RefreshUpdateBadge;
+        Closed += (_, _) => AvailableUpdates.Changed -= RefreshUpdateBadge;
+        Loaded += (_, _) => RefreshUpdateBadge();
         OnDisplayChanged();
         PreviewKeyDown += OnPreviewKeyDown;
         PreviewKeyUp += OnPreviewKeyUp;
@@ -1569,7 +1572,9 @@ public partial class MainWindow : Window, IIdeShell
 
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
-        new SettingsDialog().ShowDialog();
+        // with a badge, open the page that has something to update
+        var page = AvailableUpdates.Ide ? "Updates" : AvailableUpdates.Plugins.Count > 0 ? "Plugins" : AvailableUpdates.Themes.Count > 0 ? "Themes" : null;
+        new SettingsDialog(page).ShowDialog();
     }
 
     private void NewProject_Click(object sender, RoutedEventArgs e)
@@ -1632,6 +1637,34 @@ public partial class MainWindow : Window, IIdeShell
 
     private void ReleaseNotes_Click(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo(UpdateService.RepositoryUrl + "/releases") { UseShellExecute = true });
+
+    private string? _flashedFor;
+
+    /// <summary>Badge on the settings button + overlay on the taskbar icon; the taskbar flashes once per new NeoIDE version.</summary>
+    private void RefreshUpdateBadge()
+    {
+        var count = AvailableUpdates.Count;
+        SettingsBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SettingsButton.ToolTip = count > 0 ? $"Settings (Ctrl+Alt+S) — {AvailableUpdates.Describe()}" : "Settings (Ctrl+Alt+S)";
+        TaskbarItemInfo ??= new System.Windows.Shell.TaskbarItemInfo();
+        TaskbarItemInfo.Overlay = count > 0 ? BadgeImage() : null;
+        TaskbarItemInfo.Description = count > 0 ? AvailableUpdates.Describe() : "";
+        var version = UpdateService.AvailableVersion;
+        if (AvailableUpdates.Ide && version != null && version != _flashedFor && !IsActive)
+        {
+            _flashedFor = version;
+            TaskbarFlash.Flash(this);
+        }
+    }
+
+    private static ImageSource BadgeImage()
+    {
+        var group = new DrawingGroup();
+        group.Children.Add(new GeometryDrawing(new SolidColorBrush(Color.FromRgb(0xE8, 0x55, 0x3D)), new Pen(Brushes.White, 1.5), new EllipseGeometry(new Point(8, 8), 6.5, 6.5)));
+        var image = new DrawingImage(group);
+        image.Freeze();
+        return image;
+    }
 
     private void RefreshUpdateStatus()
     {

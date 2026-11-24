@@ -31,7 +31,7 @@ if (args.Length == 3 && args[0] == "--render")
             try { w.Show(); } catch (Exception ex) { Console.Error.WriteLine($"{name}: Show threw {ex}"); }
             w.Left = -30000; w.Top = -30000; w.Width = width; w.Height = height;
             afterShow?.Invoke();
-            var until = DateTime.Now.AddSeconds(name.StartsWith("main") ? 6 : name.StartsWith("plugins") ? 10 : 1);
+            var until = DateTime.Now.AddSeconds(name.StartsWith("main") ? 6 : name.StartsWith("plugins") ? 10 : name.StartsWith("settings") ? 4 : 1);
             while (DateTime.Now < until)
             {
                 var frame = new System.Windows.Threading.DispatcherFrame();
@@ -94,8 +94,8 @@ if (args.Length == 3 && args[0] == "--render")
                     main.OpenProject(project);
                     main.ShowPluginToolWindow(parts[0]);
                     main.ShowPluginToolWindow(parts[1]);
-                    if (parts.Length > 2 && parts[2] == "console")
-                        NeoIDE.Services.Plugins.IdeHost.Instance.MenuItems.First(m => m.Header.Contains("SQL")).OnClick();
+                    if (parts.Length > 2)
+                        NeoIDE.Services.Plugins.IdeHost.Instance.MenuItems.First(m => m.Header.Contains(parts[2] == "console" ? "SQL" : parts[2])).OnClick();
                 });
                 main.Close();
             }
@@ -106,7 +106,7 @@ if (args.Length == 3 && args[0] == "--render")
         {
             ThemeManager.Apply(theme);
             var tn0 = theme.Replace(" ", "").ToLowerInvariant();
-            if (onlyWhat == "settings") { Snap(new NeoIDE.Dialogs.SettingsDialog("Themes"), $"settings-{tn0}", 900, 640); continue; }
+            if (onlyWhat == "settings") { var pg = Environment.GetEnvironmentVariable("NEOIDE_RENDER_PAGE") ?? "Themes"; Snap(new NeoIDE.Dialogs.SettingsDialog(pg), $"settings-{pg.ToLowerInvariant()}-{tn0}", 900, 640); continue; }
             if (onlyWhat == "packages")
             {
                 Workspace.Open(project);

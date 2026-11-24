@@ -28,6 +28,7 @@ public partial class App : Application
         DisplayManager.ApplyResources();
         Controls.UpdateToast.Init();
         UpdateService.StartAutomaticChecks();
+        AvailableUpdates.Start();
 
         // plugins: staged updates / removals first, then activation (they register their tool windows)
         try { Services.Plugins.PluginManager.ApplyPending(); Services.Plugins.PluginManager.LoadAll(); }
