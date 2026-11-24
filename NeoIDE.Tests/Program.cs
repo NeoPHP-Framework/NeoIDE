@@ -31,7 +31,7 @@ if (args.Length == 3 && args[0] == "--render")
             try { w.Show(); } catch (Exception ex) { Console.Error.WriteLine($"{name}: Show threw {ex}"); }
             w.Left = -30000; w.Top = -30000; w.Width = width; w.Height = height;
             afterShow?.Invoke();
-            var until = DateTime.Now.AddSeconds(name.StartsWith("main") ? 6 : 1);
+            var until = DateTime.Now.AddSeconds(name.StartsWith("main") ? 6 : name.StartsWith("plugins") ? 10 : 1);
             while (DateTime.Now < until)
             {
                 var frame = new System.Windows.Threading.DispatcherFrame();
@@ -66,6 +66,42 @@ if (args.Length == 3 && args[0] == "--render")
         };
         var onlyTheme = Environment.GetEnvironmentVariable("NEOIDE_RENDER_THEME");
         var onlyWhat = Environment.GetEnvironmentVariable("NEOIDE_RENDER_WHAT") ?? "main";
+        if (onlyWhat == "plugins")
+        {
+            // installs the zips of NEOIDE_PLUGINS_DIST (run with NEOIDE_DATA_DIR = an isolated profile!) and renders their tool windows
+            if (Environment.GetEnvironmentVariable("NEOIDE_DATA_DIR") is not { Length: > 0 }) throw new InvalidOperationException("Set NEOIDE_DATA_DIR");
+            NeoIDE.Services.Plugins.PluginManager.ApplyPending();
+            NeoIDE.Services.Plugins.PluginManager.LoadAll();
+            foreach (var zip in Directory.GetFiles(Environment.GetEnvironmentVariable("NEOIDE_PLUGINS_DIST")!, "*.zip"))
+            {
+                var tmp = Path.Combine(Path.GetTempPath(), "neoide-test-" + Guid.NewGuid().ToString("N"));
+                System.IO.Compression.ZipFile.ExtractToDirectory(zip, tmp);
+                var p = NeoIDE.Services.Plugins.PluginManager.InstallFromFolder(tmp);
+                Directory.Delete(tmp, true);
+                Console.WriteLine($"PLUGIN {p.Id} {p.Manifest.Version}: {p.State} {p.Error}");
+            }
+            Console.WriteLine("TOOLWINDOWS " + string.Join(",", NeoIDE.Services.Plugins.IdeHost.Instance.ToolWindows.Select(w => w.Id)));
+            Console.WriteLine("MENU " + string.Join(" | ", NeoIDE.Services.Plugins.IdeHost.Instance.MenuItems.Select(m => m.Header)));
+            ThemeManager.Apply(onlyTheme ?? "Neo Dark");
+            var combos = (Environment.GetEnvironmentVariable("NEOIDE_PLUGINS_COMBOS") ?? "database:logs,routes:mercure,toolbox:logs").Split(',');
+            foreach (var combo in combos)
+            {
+                var parts = combo.Split(':');
+                var main = new NeoIDE.MainWindow();
+                app.MainWindow = main;
+                Snap(main, $"plugins-{parts[0]}-{parts[1]}", 1500, 860, () =>
+                {
+                    main.OpenProject(project);
+                    main.ShowPluginToolWindow(parts[0]);
+                    main.ShowPluginToolWindow(parts[1]);
+                    if (parts.Length > 2 && parts[2] == "console")
+                        NeoIDE.Services.Plugins.IdeHost.Instance.MenuItems.First(m => m.Header.Contains("SQL")).OnClick();
+                });
+                main.Close();
+            }
+            File.WriteAllText(Path.Combine(outDir, "plugins.log.txt"), File.Exists(Path.Combine(AppSettings.Directory, "plugins.log")) ? File.ReadAllText(Path.Combine(AppSettings.Directory, "plugins.log")) : "");
+            return;
+        }
         foreach (var theme in panels.Keys.Where(k => onlyTheme == null || k == onlyTheme))
         {
             ThemeManager.Apply(theme);
@@ -283,6 +319,17 @@ try
     Check("download + install + uninstall marketplace theme", ok && ThemeCatalog.Find("dracula") == null);
 }
 catch (Exception ex) { Check("marketplace reachable", false, ex.Message); }
+// ---- plugin SDK helpers
+{
+    var env = NeoIDE.Sdk.DotEnv.Load(args[0]);
+    Check("DotEnv: DATABASE_URL with %kernel.root_path% resolved", env.TryGetValue("DATABASE_URL", out var dbUrl) && dbUrl.StartsWith("sqlite:///") && !dbUrl.Contains('%') && dbUrl.EndsWith("/var/data.db"), dbUrl ?? "missing");
+    Check("DotEnv: quoted / inline comment / interpolation",
+        NeoIDE.Sdk.DotEnv.Parse("A=\"x y\" \nB=plain # comment\nC='${A}'\nD=${A}-z\nexport E=1").Select(kv => kv.value).SequenceEqual(new[] { "x y", "plain", "${A}", "x y-z", "1" }));
+    var box = NeoIDE.Sdk.ConsoleTable.Parse("Title\n+------+--------+\n| Name | Method |\n+------+--------+\n| home | GET    |\n| api  | POST   |\n+------+--------+\n");
+    var ruler = NeoIDE.Sdk.ConsoleTable.Parse(" ------ -------- \n  Task   Cron   \n ------ -------- \n  clean  * * * * *\n ------ -------- \n");
+    Check("ConsoleTable: box and ruler tables", box.Count == 2 && box[1]["Method"] == "POST" && ruler.Count == 1 && ruler[0]["Task"] == "clean" && ruler[0]["Cron"] == "* * * * *",
+        $"box={box.Count} ruler={ruler.Count}");
+}
 Check("update service: dev build is not installed", !NeoIDE.Services.UpdateService.IsInstalled && NeoIDE.Services.UpdateService.CurrentVersion.Length > 0);
 
 // UI smoke test (same STA thread as the Application): windows and dialogs build with the real resources

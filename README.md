@@ -9,7 +9,8 @@ The IDE of the [NeoPHP](https://github.com/NeoPHP-Framework) framework — a Php
 - **Git**: changes, partial commits, log, branches, diff
 - **Consoles**: NeoConsole (`php bin/neo` with completion and interactive questions), PowerShell, Cmd, Bash
 - **Composer packages** manager, Markdown preview
-- **Themes** in JSON, from the [NeoIDE Marketplace](https://github.com/NeoPHP-Framework/neo-ide-marketplace)
+- **Themes** in JSON and **plugins** (Database MySQL / SQLite, Mercure, Routes, Logs, NeoPHP Toolbox) from the
+  [NeoIDE Marketplace](https://github.com/NeoPHP-Framework/neo-ide-marketplace)
 - **Automatic updates**: only the changed files are downloaded
 
 ## Install
@@ -30,6 +31,7 @@ Requirements: .NET 11 SDK, Windows. Open `NeoIDE.slnx` in Rider (or `dotnet run 
 | Project | |
 |---|---|
 | `NeoIDE/` | the application |
+| `NeoIDE.Sdk/` | plugin API (`IPlugin`, `IIde`, UI helpers): the marketplace plugins are built against it |
 | `NeoIDE.Tests/` | test harness: `NeoIDE.Tests.exe <NeoPHP project>` (engine, completion, git, themes, marketplace…) |
 | `build.ps1` | build / pack / release (see below) |
 
@@ -50,6 +52,13 @@ This sets the version in `NeoIDE.csproj`, commits, tags `v0.2.0` and pushes. The
 (`.github/workflows/release.yml`) then publishes, packs with [Velopack](https://velopack.io) — full package + delta
 against the previous release — and creates the GitHub release with the notes generated from the commits.
 The installed NeoIDE pick it up automatically.
+
+## Plugins
+
+Settings › Plugins installs the plugins of the marketplace into `%APPDATA%\NeoIDE\plugins\<id>`. Each one is loaded in
+its own `AssemblyLoadContext` and talks to the IDE through `NeoIDE.Sdk` (tool windows, editor tabs, Tools menu, `bin/neo`
+commands, project `.env`, theme). Updating or removing an active plugin is applied at the next start.
+The environment variable `NEOIDE_DATA_DIR` points NeoIDE to another profile folder (tests).
 
 ## Themes
 

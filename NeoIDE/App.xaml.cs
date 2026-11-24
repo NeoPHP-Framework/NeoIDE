@@ -13,15 +13,47 @@ public partial class App : Application
         base.OnStartup(e);
         DispatcherUnhandledException += OnUnhandled;
 
+        // restarted by App.Restart(): wait for the previous instance (its plugin DLLs are locked until it exits)
+        var args = e.Args.ToList();
+        var wait = args.IndexOf("--wait-pid");
+        if (wait >= 0 && wait + 1 < args.Count)
+        {
+            if (int.TryParse(args[wait + 1], out var pid))
+                try { System.Diagnostics.Process.GetProcessById(pid).WaitForExit(15000); } catch { }
+            args.RemoveRange(wait, 2);
+        }
+
         ThemeManager.Apply(AppSettings.Current.Theme);
         SyntaxRegistry.EnsureLoaded();
         DisplayManager.ApplyResources();
         Controls.UpdateToast.Init();
         UpdateService.StartAutomaticChecks();
 
-        var arg = e.Args.FirstOrDefault();
+        // plugins: staged updates / removals first, then activation (they register their tool windows)
+        try { Services.Plugins.PluginManager.ApplyPending(); Services.Plugins.PluginManager.LoadAll(); }
+        catch (Exception ex) { Services.Plugins.PluginManager.Log("load: " + ex); }
+
+        var arg = args.FirstOrDefault();
         if (arg != null && Directory.Exists(arg)) OpenProject(arg);
         else ShowWelcome();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Services.Plugins.PluginManager.DeactivateAll();
+        base.OnExit(e);
+    }
+
+    /// <summary>Restarts NeoIDE on the current project (plugin changes, settings that need a restart).</summary>
+    public static void Restart()
+    {
+        var exe = Environment.ProcessPath;
+        if (exe == null) return;
+        var args = $"--wait-pid {Environment.ProcessId}";
+        if (Workspace.Root != null) args += $" \"{Workspace.Root}\"";
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, args) { UseShellExecute = false });
+        if (Current.MainWindow is MainWindow main) main.Close();
+        Current.Shutdown();
     }
 
     public void ShowWelcome()

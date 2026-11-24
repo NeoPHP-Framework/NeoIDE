@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -16,6 +16,7 @@ using NeoIDE.Editor;
 using NeoIDE.Php;
 using NeoIDE.Services;
 using NeoIDE.Services.Git;
+using NeoIDE.Services.Plugins;
 using NeoIDE.ViewModels;
 using Visibility = System.Windows.Visibility;
 
@@ -32,7 +33,7 @@ public sealed class EditorTab
     public DateTime LastWrite { get; set; }
 }
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IIdeShell
 {
     private readonly List<EditorTab> _tabs = new();
     private FileNode? _root;
@@ -57,6 +58,7 @@ public partial class MainWindow : Window
         PackagesPanel.PackagesChanged += OnPackagesChanged;
         Closed += (_, _) => PackagesPanel.PackagesChanged -= OnPackagesChanged;
         Closed += (_, _) => DisplayManager.Changed -= OnDisplayChanged;
+        InitPlugins();
         UpdateService.Changed += RefreshUpdateStatus;
         Closed += (_, _) => UpdateService.Changed -= RefreshUpdateStatus;
         RefreshUpdateStatus();
@@ -121,6 +123,7 @@ public partial class MainWindow : Window
         }
 
         _ = LoadNeoCommandsAsync();
+        IdeHost.Instance.RaiseProjectOpened(path);
         await InitGitAsync(path);
         await ReindexAsync();
     }
@@ -178,6 +181,7 @@ public partial class MainWindow : Window
         SaveSession();
         RunConsole.Stop();
         foreach (var t in _tabs.ToList()) CloseTab(t, save: false);
+        IdeHost.Instance.RaiseProjectClosed();
         OpenProject(path);
     }
 
@@ -196,6 +200,7 @@ public partial class MainWindow : Window
         RunConsole.Stop();
         foreach (var c in AllTerminals()) c.Stop();
         _watcher?.Dispose();
+        IdeHost.Instance.RaiseProjectClosed();
     }
 
     // ================================================================== file system watcher
@@ -462,7 +467,7 @@ public partial class MainWindow : Window
         UpdateEmptyHint();
     }
 
-    private void UpdateEmptyHint() => EmptyEditorHint.Visibility = _tabs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    private void UpdateEmptyHint() => EmptyEditorHint.Visibility = EditorTabs.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     private void Save(EditorTab tab)
     {
@@ -594,6 +599,7 @@ public partial class MainWindow : Window
             if (SideColumn.Width.Value > 0) _sideWidth = SideColumn.Width.Value;
             SideColumn.Width = new GridLength(0);
             ProjectToggle.IsChecked = StructureToggle.IsChecked = CommitToggle.IsChecked = false;
+            SyncPluginSidePanels(null);
             return;
         }
         SideColumn.Width = new GridLength(_sideWidth);
@@ -604,7 +610,8 @@ public partial class MainWindow : Window
         StructureList.Visibility = which == "structure" ? Visibility.Visible : Visibility.Collapsed;
         CommitView.Visibility = which == "commit" ? Visibility.Visible : Visibility.Collapsed;
         ProjectActions.Visibility = which == "project" ? Visibility.Visible : Visibility.Collapsed;
-        SidePanelTitle.Text = which switch { "project" => "Project", "commit" => "Commit", _ => "Structure" };
+        SidePanelTitle.Text = which switch { "project" => "Project", "commit" => "Commit", "structure" => "Structure", _ => SidePanelTitle.Text };
+        SyncPluginSidePanels(which);
         if (which == "commit") { CommitView.Rebuild(); _ = GitService.RefreshAsync(); }
         if (which == "structure") UpdateStructure();
     }
@@ -620,12 +627,14 @@ public partial class MainWindow : Window
             BottomRow.Height = new GridLength(0);
             BottomSplitterRow.Height = new GridLength(0);
             RunToggle.IsChecked = TerminalToggle.IsChecked = ProblemsToggle.IsChecked = GitToggle.IsChecked = false;
+            SyncPluginBottomPanels(null);
             CurrentEditor?.TextArea.Focus();
             return;
         }
         BottomRow.Height = new GridLength(_bottomHeight);
         BottomSplitterRow.Height = new GridLength(1);
-        BottomTabs.SelectedItem = which switch { "terminal" => TerminalTab, "problems" => FindTab, "git" => GitTab, _ => RunTab };
+        BottomTabs.SelectedItem = PluginBottomTab(which) ?? (which switch { "terminal" => TerminalTab, "problems" => FindTab, "git" => GitTab, _ => RunTab });
+        SyncPluginBottomPanels(which);
         GitToggle.IsChecked = which == "git";
         if (which == "git") _ = GitLogView.LoadAsync();
         RunToggle.IsChecked = which == "run";
@@ -635,7 +644,7 @@ public partial class MainWindow : Window
     }
 
     private bool IsBottomVisible(string which) => BottomRow.Height.Value > 0 &&
-        BottomTabs.SelectedItem == (which switch { "terminal" => TerminalTab, "problems" => FindTab, "git" => GitTab, _ => (TabItem)RunTab });
+        BottomTabs.SelectedItem == (PluginBottomTab(which) ?? (which switch { "terminal" => TerminalTab, "problems" => FindTab, "git" => GitTab, _ => (TabItem)RunTab }));
 
     private void BottomToggle_Click(object sender, RoutedEventArgs e)
     {
@@ -649,7 +658,7 @@ public partial class MainWindow : Window
     {
         if (BottomTabs.SelectedItem == RunTab) RunConsole.Clear();
         else if (BottomTabs.SelectedItem == TerminalTab) TerminalConsole.Clear();
-        else FindResults.ItemsSource = null;
+        else if (BottomTabs.SelectedItem == FindTab) FindResults.ItemsSource = null;
     }
 
     private void ShowTerminal_Click(object sender, RoutedEventArgs e) => ShowBottom(IsBottomVisible("terminal") ? null : "terminal");
@@ -1534,7 +1543,11 @@ public partial class MainWindow : Window
 
     // ================================================================== misc menu actions
 
-    private void SetStatus(string msg) => StatusMessage.Text = msg;
+    private void SetStatus(string msg)
+    {
+        StatusMessage.Text = msg;
+        StatusMessage.ClearValue(TextBlock.ForegroundProperty);
+    }
 
     private void UpdateThemeMenu()
     {

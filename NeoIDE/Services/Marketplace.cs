@@ -33,7 +33,23 @@ public sealed class MarketplaceIndex
 {
     [JsonPropertyName("version")] public int Version { get; set; } = 1;
     [JsonPropertyName("themes")] public List<MarketplaceItem> Themes { get; set; } = new();
-    [JsonPropertyName("plugins")] public List<MarketplaceItem> Plugins { get; set; } = new();
+    [JsonPropertyName("plugins")] public List<MarketplacePlugin> Plugins { get; set; } = new();
+}
+
+/// <summary>A plugin of index.json: a zip built by the marketplace CI (plugin.json + DLLs).</summary>
+public sealed class MarketplacePlugin
+{
+    [JsonPropertyName("id")] public string Id { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("version")] public string Version { get; set; } = "1.0.0";
+    [JsonPropertyName("author")] public string Author { get; set; } = "";
+    [JsonPropertyName("description")] public string Description { get; set; } = "";
+    [JsonPropertyName("icon")] public string Icon { get; set; } = "";
+    [JsonPropertyName("sdk")] public int Sdk { get; set; } = 1;
+    [JsonPropertyName("minIdeVersion")] public string? MinIdeVersion { get; set; }
+    [JsonPropertyName("download")] public string Download { get; set; } = "";
+    [JsonPropertyName("homepage")] public string? Homepage { get; set; }
+    [JsonPropertyName("tags")] public List<string> Tags { get; set; } = new();
 }
 
 /// <summary>

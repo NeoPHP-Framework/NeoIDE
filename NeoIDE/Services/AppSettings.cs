@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 
 namespace NeoIDE.Services;
@@ -55,11 +55,16 @@ public sealed class AppSettings
     public bool AutoDownloadUpdates { get; set; } = true;
     public string? DismissedUpdateVersion { get; set; }
 
+    // ---- Plugins (ids)
+    public List<string> DisabledPlugins { get; set; } = new();
+
     public static string Directory
     {
         get
         {
-            var dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NeoIDE");
+            // NEOIDE_DATA_DIR: isolated profile (tests, portable use)
+            var dir = Environment.GetEnvironmentVariable("NEOIDE_DATA_DIR") is { Length: > 0 } custom ? custom
+                : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "NeoIDE");
             System.IO.Directory.CreateDirectory(dir);
             return dir;
         }

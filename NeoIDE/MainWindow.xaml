@@ -183,6 +183,9 @@
                         <MenuItem Header="PHP interpreter…" Click="Interpreter_Click"/>
                         <MenuItem Header="Re-index project" Click="Reindex_Click"/>
                     </MenuItem>
+                    <MenuItem x:Name="ToolsMenu" Header="_Tools">
+                        <MenuItem Header="Plugins…" Click="ManagePlugins_Click"/>
+                    </MenuItem>
                     <MenuItem Header="_Help">
                         <MenuItem Header="NeoPHP documentation" Click="Docs_Click"/>
                         <MenuItem Header="Keyboard shortcuts" Click="Shortcuts_Click"/>
@@ -296,7 +299,7 @@
             <!-- ================= Left tool strip ================= -->
             <Border x:Name="ToolStrip" DockPanel.Dock="Left" Width="40" Background="{DynamicResource PanelBg}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,1,0">
                 <DockPanel>
-                    <StackPanel DockPanel.Dock="Top">
+                    <StackPanel x:Name="StripTop" DockPanel.Dock="Top">
                         <ToggleButton x:Name="ProjectToggle" Style="{StaticResource StripToggle}" IsChecked="True" Click="ProjectToggle_Click" ToolTip="Project (Alt+1)">
                             <TextBlock Text="&#xE8B7;" FontFamily="{StaticResource Icons}" FontSize="15"/>
                         </ToggleButton>
@@ -307,7 +310,7 @@
                             <TextBlock Text="&#xE8FD;" FontFamily="{StaticResource Icons}" FontSize="15"/>
                         </ToggleButton>
                     </StackPanel>
-                    <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
+                    <StackPanel x:Name="StripBottom" DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
                         <ToggleButton x:Name="RunToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="run" ToolTip="Run (Alt+4)">
                             <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="14"/>
                         </ToggleButton>
@@ -357,8 +360,8 @@
                         </StackPanel>
                         <TextBlock x:Name="SidePanelTitle" Text="Project" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
                     </DockPanel>
-                    <Grid>
-                        <TreeView x:Name="ProjectTree" Padding="0,0,0,8"
+                    <Grid x:Name="SideHost">
+                        <TreeView x:Name="ProjectTree" Padding="0,0,0,8" ItemContainerStyle="{StaticResource FileTreeItem}"
                                   MouseDoubleClick="ProjectTree_DoubleClick" KeyDown="ProjectTree_KeyDown"
                                   PreviewMouseRightButtonDown="ProjectTree_RightDown" PreviewMouseLeftButtonDown="ProjectTree_PreviewMouseDown">
                             <TreeView.ContextMenu>

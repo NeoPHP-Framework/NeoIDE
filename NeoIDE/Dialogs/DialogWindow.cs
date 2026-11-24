@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Shell;
@@ -95,6 +95,31 @@ public sealed class InputDialog : DialogWindow
         var d = new InputDialog(title, label, value, hint, validate);
         return d.ShowDialog() == true ? d.Value.Trim() : null;
     }
+}
+
+/// <summary>Dialog around any content (used by the plugins).</summary>
+public sealed class ContentDialog : DialogWindow
+{
+    private ContentDialog(string title, FrameworkElement content, string ok, string? cancel, Func<string?>? validate, double width)
+    {
+        Title = title;
+        var panel = new StackPanel { Margin = new Thickness(18, 4, 18, 18), Width = width };
+        panel.Children.Add(content);
+        var error = new TextBlock { Foreground = ThemeManager.Brush("ErrorFg"), Margin = new Thickness(0, 8, 0, 0), Visibility = Visibility.Collapsed, TextWrapping = TextWrapping.Wrap };
+        panel.Children.Add(error);
+        var okB = Primary(ok);
+        okB.Click += (_, _) =>
+        {
+            var msg = validate?.Invoke();
+            if (msg != null) { error.Text = msg; error.Visibility = Visibility.Visible; return; }
+            DialogResult = true;
+        };
+        panel.Children.Add(cancel != null ? Buttons(okB, Secondary(cancel)) : Buttons(okB));
+        Content = panel;
+    }
+
+    public static bool Show(string title, FrameworkElement content, string ok, string? cancel, Func<string?>? validate, double width) =>
+        new ContentDialog(title, content, ok, cancel, validate, width).ShowDialog() == true;
 }
 
 /// <summary>Simple themed message box.</summary>

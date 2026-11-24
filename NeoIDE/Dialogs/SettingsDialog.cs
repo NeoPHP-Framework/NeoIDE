@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -36,6 +36,7 @@ public sealed class SettingsDialog : DialogWindow
             _s.EditorHighlightCurrentLine, _s.EditorShowFolding);
 
         _pages["Themes"] = BuildThemes();
+        _pages["Plugins"] = BuildPlugins();
         _pages["Appearance"] = BuildAppearance();
         _pages["Editor"] = BuildEditor();
         _pages["PHP"] = BuildPhp();
@@ -185,8 +186,10 @@ public sealed class SettingsDialog : DialogWindow
         catch (Exception ex)
         {
             _marketStatus.Text = "The marketplace is not reachable: " + ex.Message;
+            _pluginStatus.Text = _marketStatus.Text;
         }
         RefreshThemes();
+        RefreshPlugins();
     }
 
     private void RefreshThemes()
@@ -406,6 +409,186 @@ public sealed class SettingsDialog : DialogWindow
         p.Children.Add(Row("Author name:", _author));
         p.Children.Add(Row("Author e-mail:", _email));
         return p;
+    }
+
+    // ------------------------------------------------------------------ plugins
+
+    private StackPanel _installedPlugins = new(), _marketPlugins = new();
+    private TextBlock _pluginStatus = new();
+    private Border _restartBanner = new();
+
+    private FrameworkElement BuildPlugins()
+    {
+        var p = new StackPanel();
+        var head = new DockPanel { Margin = new Thickness(0, 14, 0, 4) };
+        var fromDisk = new Button { Content = "Install from disk…", MinWidth = 0, Margin = new Thickness(8, 0, 0, 0) };
+        var folder = new Button { Content = "Open plugins folder", MinWidth = 0, Margin = new Thickness(8, 0, 0, 0) };
+        DockPanel.SetDock(folder, Dock.Right);
+        DockPanel.SetDock(fromDisk, Dock.Right);
+        head.Children.Add(folder);
+        head.Children.Add(fromDisk);
+        var title = Section("Installed plugins");
+        title.Margin = new Thickness(0);
+        head.Children.Add(title);
+        p.Children.Add(head);
+        p.Children.Add(Hint("Plugins add tool windows and commands to NeoIDE. They run with your permissions: install only plugins you trust."));
+
+        var restart = new Button { Content = "Restart now", Style = (Style)FindResource("PrimaryButton"), MinWidth = 0, Padding = new Thickness(10, 2, 10, 2) };
+        restart.Click += (_, _) => { Commit(); DialogResult = true; App.Restart(); };
+        var bannerDock = new DockPanel();
+        DockPanel.SetDock(restart, Dock.Right);
+        bannerDock.Children.Add(restart);
+        bannerDock.Children.Add(new TextBlock { Text = "Restart NeoIDE to finish the changes of the plugins.", VerticalAlignment = VerticalAlignment.Center, Foreground = ThemeManager.Brush("Fg") });
+        _restartBanner = new Border
+        {
+            Child = bannerDock, Padding = new Thickness(12, 8, 8, 8), Margin = new Thickness(0, 10, 0, 0), CornerRadius = new CornerRadius(6),
+            Background = ThemeManager.Brush("SelectedInactiveBg"), BorderBrush = ThemeManager.Brush("Accent"), BorderThickness = new Thickness(1),
+        };
+        p.Children.Add(_restartBanner);
+
+        _installedPlugins = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        p.Children.Add(_installedPlugins);
+        p.Children.Add(Section("Marketplace"));
+        _pluginStatus = Hint("Loading the plugins of the NeoIDE marketplace…");
+        p.Children.Add(_pluginStatus);
+        _marketPlugins = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        p.Children.Add(_marketPlugins);
+
+        fromDisk.Click += (_, _) =>
+        {
+            var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "NeoIDE plugin (*.zip)|*.zip" };
+            if (dlg.ShowDialog(this) != true) return;
+            var temp = Path.Combine(Path.GetTempPath(), "neoide-plugin-" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                System.IO.Compression.ZipFile.ExtractToDirectory(dlg.FileName, temp);
+                var installed = Services.Plugins.PluginManager.InstallFromFolder(temp);
+                _pluginStatus.Text = $"{installed.Manifest.Name} {installed.Manifest.Version} installed.";
+            }
+            catch (Exception ex) { MessageDialog.Show("Install plugin", "This file is not a valid NeoIDE plugin:\n" + ex.Message); }
+            finally { try { Directory.Delete(temp, true); } catch { } }
+        };
+        folder.Click += (_, _) =>
+        {
+            Directory.CreateDirectory(Services.Plugins.PluginManager.Root);
+            System.Diagnostics.Process.Start("explorer.exe", Services.Plugins.PluginManager.Root);
+        };
+        Services.Plugins.PluginManager.Changed += RefreshPlugins;
+        Closed += (_, _) => Services.Plugins.PluginManager.Changed -= RefreshPlugins;
+        RefreshPlugins();
+        return p;
+    }
+
+    private void RefreshPlugins()
+    {
+        _restartBanner.Visibility = Services.Plugins.PluginManager.RestartRequired ? Visibility.Visible : Visibility.Collapsed;
+        _installedPlugins.Children.Clear();
+        foreach (var plugin in Services.Plugins.PluginManager.Installed.OrderBy(x => x.Manifest.Name))
+        {
+            var m = plugin.Manifest;
+            var (state, stateKey) = plugin.State switch
+            {
+                Services.Plugins.PluginState.Active => ("Active", "SuccessFg"),
+                Services.Plugins.PluginState.Disabled => ("Disabled", "FgSecondary"),
+                Services.Plugins.PluginState.Failed => ("Failed: " + plugin.Error, "ErrorFg"),
+                Services.Plugins.PluginState.Incompatible => ("Incompatible: " + plugin.Error, "WarnFg"),
+                _ => (plugin.PendingRemoval ? "Removed at the next start" : plugin.PendingVersion != null ? $"Version {plugin.PendingVersion} installed at the next start"
+                    : Services.Plugins.PluginManager.IsEnabled(m.Id) ? "Enabled at the next start" : "Disabled at the next start", "WarnFg"),
+            };
+            var actions = new List<FrameworkElement>();
+            if (!plugin.PendingRemoval)
+            {
+                var enabled = new CheckBox { Content = "Enabled", IsChecked = Services.Plugins.PluginManager.IsEnabled(m.Id), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
+                enabled.Click += (_, _) => Services.Plugins.PluginManager.SetEnabled(m.Id, enabled.IsChecked == true);
+                actions.Add(enabled);
+                var update = _index?.Plugins.FirstOrDefault(x => x.Id == m.Id && Marketplace.IsNewer(x.Version, plugin.PendingVersion ?? m.Version));
+                if (update != null) actions.Add(PluginButton($"Update to {update.Version}", true, b => _ = InstallPlugin(update, b)));
+                actions.Add(PluginButton("Uninstall", false, _ =>
+                {
+                    if (MessageDialog.Confirm("Uninstall plugin", $"Uninstall {m.Name}? Its settings are deleted too.", "Uninstall"))
+                        Services.Plugins.PluginManager.Uninstall(m.Id);
+                }));
+            }
+            _installedPlugins.Children.Add(PluginRow(m.Icon, m.Name, $"v{m.Version} · {m.Author}", m.Description, state, stateKey, actions));
+        }
+        if (_installedPlugins.Children.Count == 0) _installedPlugins.Children.Add(Hint("No plugin installed yet: pick one in the marketplace below."));
+
+        _marketPlugins.Children.Clear();
+        if (_index == null) return;
+        _pluginStatus.Text = $"{_index.Plugins.Count} plugin(s) on {Marketplace.RepositoryUrl}";
+        foreach (var item in _index.Plugins.Where(x => Services.Plugins.PluginManager.Find(x.Id) == null).OrderBy(x => x.Name))
+        {
+            var compatible = item.Sdk == NeoIDE.Sdk.SdkInfo.Version;
+            var actions = new List<FrameworkElement>();
+            if (compatible) actions.Add(PluginButton("Install", true, b => _ = InstallPlugin(item, b)));
+            _marketPlugins.Children.Add(PluginRow(item.Icon, item.Name, $"v{item.Version} · {item.Author}", item.Description,
+                compatible ? null : "Requires another version of NeoIDE", "WarnFg", actions));
+        }
+        if (_marketPlugins.Children.Count == 0) _marketPlugins.Children.Add(Hint("All the marketplace plugins are installed."));
+    }
+
+    private Button PluginButton(string text, bool primary, Action<Button> click)
+    {
+        var b = new Button { Content = text, MinWidth = 0, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 0, 6, 0) };
+        if (primary) b.Style = (Style)FindResource("PrimaryButton");
+        b.Click += (_, _) => click(b);
+        return b;
+    }
+
+    private Border PluginRow(string icon, string name, string meta, string description, string? state, string stateKey, List<FrameworkElement> actions)
+    {
+        var tile = new Border
+        {
+            Width = 40, Height = 40, CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Top,
+            Background = ThemeManager.Brush("SelectedInactiveBg"),
+            Child = new TextBlock { Text = icon, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 19, Foreground = ThemeManager.Brush("Accent"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        var text = new StackPanel();
+        var titleRow = new StackPanel { Orientation = Orientation.Horizontal };
+        titleRow.Children.Add(new TextBlock { Text = name, FontWeight = FontWeights.SemiBold, Foreground = ThemeManager.Brush("Fg") });
+        titleRow.Children.Add(new TextBlock { Text = "   " + meta, FontSize = 11.5, Foreground = ThemeManager.Brush("FgSecondary"), VerticalAlignment = VerticalAlignment.Center });
+        text.Children.Add(titleRow);
+        text.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Brush("FgSecondary"), Margin = new Thickness(0, 3, 0, 0) });
+        if (state != null) text.Children.Add(new TextBlock { Text = state, FontSize = 11.5, TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Brush(stateKey), Margin = new Thickness(0, 4, 0, 0) });
+        if (actions.Count > 0)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+            foreach (var a in actions) row.Children.Add(a);
+            text.Children.Add(row);
+        }
+        var dock = new DockPanel();
+        DockPanel.SetDock(tile, Dock.Left);
+        dock.Children.Add(tile);
+        dock.Children.Add(text);
+        return new Border
+        {
+            Child = dock, Padding = new Thickness(12), Margin = new Thickness(0, 0, 0, 10), CornerRadius = new CornerRadius(7),
+            BorderThickness = new Thickness(1), BorderBrush = ThemeManager.Brush("SubtleBorder"),
+        };
+    }
+
+    private async Task InstallPlugin(MarketplacePlugin item, Button button)
+    {
+        button.IsEnabled = false;
+        var label = button.Content;
+        try
+        {
+            var progress = new Progress<int>(p => button.Content = $"{p}%");
+            var installed = await Services.Plugins.PluginManager.InstallAsync(item, progress);
+            _pluginStatus.Text = installed.State switch
+            {
+                Services.Plugins.PluginState.Active => $"{item.Name} {item.Version} installed — its tool window is in the left / bottom bar.",
+                Services.Plugins.PluginState.RestartRequired => $"{item.Name} {item.Version} downloaded: restart NeoIDE to use it.",
+                _ => $"{item.Name}: {installed.Error}",
+            };
+        }
+        catch (Exception ex)
+        {
+            _pluginStatus.Text = $"Unable to install {item.Name}: {ex.Message}";
+            button.Content = label;
+            button.IsEnabled = true;
+        }
+        RefreshPlugins();
     }
 
     private ComboBox _channel = new();
