@@ -299,8 +299,10 @@ internal sealed class PluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName name)
     {
-        // shared with the IDE: the SDK and every assembly the IDE ships (WPF, AvalonEdit…)
-        if (name.Name == "NeoIDE.Sdk" || name.Name == "NeoIDE") return null;
+        // the SDK of the IDE, whatever version the plugin was compiled against (compatibility is checked with "sdk" in plugin.json)
+        if (name.Name == "NeoIDE.Sdk") return typeof(IPlugin).Assembly;
+        if (name.Name == "NeoIDE") return typeof(PluginManager).Assembly;
+        // shared with the IDE: every assembly the IDE ships (WPF, AvalonEdit…)
         if (Default.Assemblies.Any(a => a.GetName().Name == name.Name)) return null;
         try { if (Default.LoadFromAssemblyName(name) is { } shared) return shared; } catch { }
         var path = _resolver.ResolveAssemblyToPath(name);

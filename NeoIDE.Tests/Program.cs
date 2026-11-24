@@ -321,6 +321,9 @@ try
 catch (Exception ex) { Check("marketplace reachable", false, ex.Message); }
 // ---- plugin SDK helpers
 {
+    // the plugins reference NeoIDE.Sdk 1.0.0.0: a release build (-p:Version=x.y.z) must not change it
+    Check("NeoIDE.Sdk assembly version pinned to 1.0.0.0", typeof(NeoIDE.Sdk.SdkInfo).Assembly.GetName().Version == new Version(1, 0, 0, 0),
+        typeof(NeoIDE.Sdk.SdkInfo).Assembly.GetName().Version?.ToString() ?? "");
     var env = NeoIDE.Sdk.DotEnv.Load(args[0]);
     Check("DotEnv: DATABASE_URL with %kernel.root_path% resolved", env.TryGetValue("DATABASE_URL", out var dbUrl) && dbUrl.StartsWith("sqlite:///") && !dbUrl.Contains('%') && dbUrl.EndsWith("/var/data.db"), dbUrl ?? "missing");
     Check("DotEnv: quoted / inline comment / interpolation",
