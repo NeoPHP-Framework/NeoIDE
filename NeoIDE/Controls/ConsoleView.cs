@@ -256,14 +256,14 @@ public sealed class ConsoleView : DockPanel
     }
 
     /// <summary>Runs a process and streams its output here (Run tool window).</summary>
-    public async Task<int> RunAsync(string exe, string args, string? cwd = null, string? title = null)
+    public async Task<int> RunAsync(string exe, string args, string? cwd = null, string? title = null, IDictionary<string, string>? env = null)
     {
         Stop();
         _runner = new ProcessRunner();
         _runner.Output += OnProcessOutput;
         AppendKind(title ?? $"{Path.GetFileName(exe)} {args}", LineKind.Command);
         RunningChanged?.Invoke(true);
-        var code = await _runner.StartAsync(exe, args, cwd ?? WorkingDirectory);
+        var code = await _runner.StartAsync(exe, args, cwd ?? WorkingDirectory, env);
         AppendKind($"Process finished with exit code {code}", code == 0 ? LineKind.Info : LineKind.Error);
         RunningChanged?.Invoke(false);
         return code;

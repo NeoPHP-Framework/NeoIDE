@@ -123,6 +123,8 @@
                         <MenuItem Header="Project" InputGestureText="Alt+1" Click="ToggleProject_Click"/>
                         <MenuItem Header="Terminal" InputGestureText="Alt+F12" Click="ShowTerminal_Click"/>
                         <MenuItem Header="Run" InputGestureText="Alt+4" Click="ShowRun_Click"/>
+                        <MenuItem Header="Debug" InputGestureText="Alt+5" Click="ShowDebug_Click"/>
+                        <MenuItem Header="Problems" InputGestureText="Alt+6" Click="ShowProblems_Click"/>
                         <Separator/>
                         <MenuItem Header="Increase Font Size" InputGestureText="Ctrl+=" Click="FontBigger_Click"/>
                         <MenuItem Header="Decrease Font Size" InputGestureText="Ctrl+-" Click="FontSmaller_Click"/>
@@ -138,6 +140,42 @@
                         <MenuItem Header="Code Completion" InputGestureText="Ctrl+Space" Click="Completion_Click"/>
                         <MenuItem Header="Show Context Actions" InputGestureText="Alt+Enter" Click="QuickFix_Click"/>
                         <MenuItem Header="Optimize Imports" InputGestureText="Ctrl+Alt+O" Click="OptimizeImports_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Next Problem" InputGestureText="F2" Click="NextProblem_Click"/>
+                        <MenuItem Header="Previous Problem" InputGestureText="Shift+F2" Click="PreviousProblem_Click"/>
+                        <MenuItem Header="Inspect Code (PHPStan)…" Click="InspectCode_Click"/>
+                        <MenuItem Header="Code Analysis">
+                            <MenuItem x:Name="LintItem" Header="Check the syntax while typing (php -l)" IsCheckable="True" Click="LintToggle_Click"/>
+                            <MenuItem x:Name="PhpStanOnSaveItem" Header="PHPStan on save (when installed)" IsCheckable="True" Click="PhpStanOnSave_Click"/>
+                            <MenuItem x:Name="NeoChecksItem" Header="Check NeoPHP names (routes, templates, .env)" IsCheckable="True" Click="NeoChecks_Click"/>
+                            <MenuItem Header="PHPStan level without phpstan.neon…" Click="PhpStanLevel_Click"/>
+                        </MenuItem>
+                    </MenuItem>
+                    <MenuItem x:Name="RunMenu" Header="_Run">
+                        <MenuItem Header="Run 'bin/neo serve'" InputGestureText="Shift+F10" Click="Run_Click"/>
+                        <MenuItem Header="Debug 'bin/neo serve'" InputGestureText="Shift+F9" Click="DebugServer_Click"/>
+                        <MenuItem Header="Debug a neo Command…" Click="DebugCommand_Click"/>
+                        <MenuItem Header="Debug Current PHP Script" Click="DebugScript_Click"/>
+                        <Separator/>
+                        <MenuItem x:Name="ListenMenuItem" Header="Start Listening for PHP Debug Connections" Click="ListenToggle_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Resume Program" InputGestureText="F9" Click="DebugResume_Click"/>
+                        <MenuItem Header="Step Over" InputGestureText="F8" Click="DebugStepOver_Click"/>
+                        <MenuItem Header="Step Into" InputGestureText="F7" Click="DebugStepInto_Click"/>
+                        <MenuItem Header="Step Out" InputGestureText="Shift+F8" Click="DebugStepOut_Click"/>
+                        <MenuItem Header="Stop" InputGestureText="Ctrl+F2" Click="Stop_Click"/>
+                        <MenuItem Header="Evaluate Expression…" InputGestureText="Alt+F8" Click="DebugEvaluate_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Toggle Line Breakpoint" InputGestureText="Ctrl+F8" Click="ToggleBreakpoint_Click"/>
+                        <MenuItem x:Name="MuteMenuItem" Header="Mute Breakpoints" IsCheckable="True" Click="MuteBreakpoints_Click"/>
+                        <MenuItem Header="Remove All Breakpoints" Click="RemoveBreakpoints_Click"/>
+                        <Separator/>
+                        <MenuItem Header="Debug Settings">
+                            <MenuItem x:Name="BreakFirstLineItem" Header="Break at the first line" IsCheckable="True" Click="BreakFirstLine_Click"/>
+                            <MenuItem Header="Xdebug port…" Click="XdebugPort_Click"/>
+                            <MenuItem Header="Server path of the project (Docker / VM)…" Click="ServerPath_Click"/>
+                            <MenuItem Header="Check Xdebug installation" Click="CheckXdebug_Click"/>
+                        </MenuItem>
                     </MenuItem>
                     <MenuItem Header="_Git">
                         <MenuItem Header="Commit…" InputGestureText="Ctrl+K" Click="GitCommitPanel_Click"/>
@@ -232,9 +270,16 @@
                     <Button x:Name="RunButton" Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Run_Click" ToolTip="Run 'php bin/neo serve' (Shift+F10)">
                         <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource SuccessFg}"/>
                     </Button>
+                    <Button x:Name="DebugButton" Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="DebugServer_Click" ToolTip="Debug 'php bin/neo serve' with Xdebug (Shift+F9)">
+                        <TextBlock Text="&#xEBE8;" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource SuccessFg}"/>
+                    </Button>
                     <Button x:Name="StopButton" Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="Stop_Click" IsEnabled="False" ToolTip="Stop (Ctrl+F2)">
                         <TextBlock Text="&#xE71A;" FontFamily="{StaticResource Icons}" FontSize="14" Foreground="{DynamicResource ErrorFg}"/>
                     </Button>
+                    <ToggleButton x:Name="ListenButton" Style="{StaticResource StripToggle}" Width="30" Height="28" Margin="2,0" WindowChrome.IsHitTestVisibleInChrome="True"
+                                  Click="ListenToggle_Click" ToolTip="Start listening for PHP debug connections (Xdebug)">
+                        <TextBlock Text="&#xE717;" FontFamily="{StaticResource Icons}" FontSize="13"/>
+                    </ToggleButton>
                     <Border Width="1" Height="18" Background="{DynamicResource SubtleBorder}" Margin="6,0"/>
                     <Button Style="{StaticResource ToolButton}" WindowChrome.IsHitTestVisibleInChrome="True" Click="SearchEverywhere_Click" ToolTip="Search Everywhere (Double Shift)">
                         <TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="14"/>
@@ -277,6 +322,17 @@
                             </StackPanel>
                         </Button>
                         <TextBlock x:Name="StatusIndex" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <Button x:Name="StatusDebugButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="0,0,10,0" Click="ShowDebug_Click"
+                                ToolTip="Debugger" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xEBE8;" FontFamily="{StaticResource Icons}" FontSize="11" Margin="0,1,5,0" Foreground="{DynamicResource WarnFg}"/>
+                                <TextBlock x:Name="StatusDebug" Foreground="{DynamicResource WarnFg}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="StatusProblemsButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="0,0,10,0" Click="ShowProblems_Click"
+                                ToolTip="Problems of the current file (Alt+6)">
+                            <StackPanel x:Name="StatusProblems" Orientation="Horizontal"/>
+                        </Button>
                         <Button x:Name="StatusBranchButton" Style="{StaticResource ToolButton}" Padding="4,0" Margin="0,0,10,0" Click="GitWidget_Click"
                                 ToolTip="Git branch" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal">
@@ -325,7 +381,13 @@
                         <ToggleButton x:Name="GitToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="git" ToolTip="Git log (Alt+9)">
                             <TextBlock Text="&#xE81C;" FontFamily="{StaticResource Icons}" FontSize="14"/>
                         </ToggleButton>
-                        <ToggleButton x:Name="ProblemsToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="problems" ToolTip="Find results">
+                        <ToggleButton x:Name="ProblemsToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="problems" ToolTip="Problems (Alt+6)">
+                            <TextBlock Text="&#xE7BA;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="DebugToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="debug" ToolTip="Debug (Alt+5)">
+                            <TextBlock Text="&#xEBE8;" FontFamily="{StaticResource Icons}" FontSize="14"/>
+                        </ToggleButton>
+                        <ToggleButton x:Name="FindToggle" Style="{StaticResource StripToggle}" Click="BottomToggle_Click" Tag="find" ToolTip="Find results">
                             <TextBlock Text="&#xE71E;" FontFamily="{StaticResource Icons}" FontSize="14"/>
                         </ToggleButton>
                     </StackPanel>
@@ -450,6 +512,12 @@
                         </TabItem>
                         <TabItem x:Name="GitTab" Header="Git" Style="{StaticResource ToolTabItem}">
                             <c:GitLogPanel x:Name="GitLogView"/>
+                        </TabItem>
+                        <TabItem x:Name="ProblemsTab" Header="Problems" Style="{StaticResource ToolTabItem}">
+                            <c:ProblemsPanel x:Name="ProblemsView"/>
+                        </TabItem>
+                        <TabItem x:Name="DebugTab" Header="Debug" Style="{StaticResource ToolTabItem}">
+                            <c:DebugPanel x:Name="DebugView"/>
                         </TabItem>
                         <TabItem x:Name="FindTab" Header="Find" Style="{StaticResource ToolTabItem}">
                             <ListBox x:Name="FindResults" FontFamily="{StaticResource CodeFont}" FontSize="12.5" MouseDoubleClick="FindResults_DoubleClick"

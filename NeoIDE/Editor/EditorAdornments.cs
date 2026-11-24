@@ -92,20 +92,37 @@ public sealed class LinkColorizer : DocumentColorizingTransformer
     }
 }
 
-/// <summary>Draws wavy underlines under unresolved symbols.</summary>
+/// <summary>An underlined range of the editor and its message.</summary>
+public sealed record Squiggle(int Start, int Length, string Message, Services.Diagnostics.Severity Severity, string Source = "ide");
+
+/// <summary>Draws wavy underlines under problems (red errors, orange warnings, grey hints).</summary>
 public sealed class SquiggleRenderer : IBackgroundRenderer
 {
-    public List<(int start, int length, string message)> Markers { get; set; } = new();
+    public List<Squiggle> Markers { get; set; } = new();
     public KnownLayer Layer => KnownLayer.Selection;
+
+    public static Color ColorOf(Services.Diagnostics.Severity s) => s switch
+    {
+        Services.Diagnostics.Severity.Error => EditorPalette.ErrorUnderline,
+        Services.Diagnostics.Severity.Warning => EditorPalette.WarningUnderline,
+        _ => EditorPalette.InfoUnderline,
+    };
 
     public void Draw(TextView textView, DrawingContext dc)
     {
         if (Markers.Count == 0 || !textView.VisualLinesValid) return;
-        var pen = new Pen(new SolidColorBrush(EditorPalette.ErrorUnderline), 1);
-        pen.Freeze();
-        foreach (var (start, length, _) in Markers)
+        var pens = new Dictionary<Services.Diagnostics.Severity, Pen>();
+        // errors drawn last (on top)
+        foreach (var m in Markers.OrderByDescending(m => m.Severity))
         {
-            if (start + length > textView.Document.TextLength) continue;
+            var (start, length) = (m.Start, Math.Max(1, m.Length));
+            if (start < 0 || start + length > textView.Document.TextLength) continue;
+            if (!pens.TryGetValue(m.Severity, out var pen))
+            {
+                pen = new Pen(new SolidColorBrush(ColorOf(m.Severity)), 1);
+                pen.Freeze();
+                pens[m.Severity] = pen;
+            }
             var seg = new TextSegment { StartOffset = start, Length = length };
             foreach (var r in BackgroundGeometryBuilder.GetRectsForSegment(textView, seg))
             {

@@ -31,7 +31,7 @@ if (args.Length == 3 && args[0] == "--render")
             try { w.Show(); } catch (Exception ex) { Console.Error.WriteLine($"{name}: Show threw {ex}"); }
             w.Left = -30000; w.Top = -30000; w.Width = width; w.Height = height;
             afterShow?.Invoke();
-            var until = DateTime.Now.AddSeconds(name.StartsWith("main") ? 6 : name.StartsWith("plugins") ? 10 : name.StartsWith("settings") ? 4 : 1);
+            var until = DateTime.Now.AddSeconds(name.StartsWith("main") ? 6 : name.StartsWith("plugins") ? 10 : name.StartsWith("v2") ? 9 : name.StartsWith("settings") ? 4 : 1);
             while (DateTime.Now < until)
             {
                 var frame = new System.Windows.Threading.DispatcherFrame();
@@ -107,6 +107,70 @@ if (args.Length == 3 && args[0] == "--render")
             ThemeManager.Apply(theme);
             var tn0 = theme.Replace(" ", "").ToLowerInvariant();
             if (onlyWhat == "settings") { var pg = Environment.GetEnvironmentVariable("NEOIDE_RENDER_PAGE") ?? "Themes"; Snap(new NeoIDE.Dialogs.SettingsDialog(pg), $"settings-{pg.ToLowerInvariant()}-{tn0}", 900, 640); continue; }
+            if (onlyWhat == "v2")
+            {
+                var homeFile = Path.Combine(project, "src", "Controller", "HomeController.php");
+                void After(double seconds, Action a)
+                {
+                    var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+                    timer.Tick += (_, _) => { timer.Stop(); try { a(); } catch (Exception ex) { Console.Error.WriteLine("v2: " + ex); } };
+                    timer.Start();
+                }
+                // 1. problems: php -l, NeoPHP checks, error stripe, Problems tool window, breakpoint marker
+                var homeOriginal = File.ReadAllText(homeFile);
+                var w1 = new NeoIDE.MainWindow();
+                Snap(w1, $"v2-problems-{tn0}", 1500, 860, () =>
+                {
+                    w1.OpenProject(project);
+                    After(3, () =>
+                    {
+                        w1.OpenFile(homeFile);
+                        var ed = w1.EditorForPreview!;
+                        var at = ed.Text.IndexOf("return $this->render");
+                        ed.Document.Insert(at, "$url = $this->generateUrl('homee');\n        $x = 1\n        ");
+                        NeoIDE.Services.Debug.Breakpoints.Add(new BreakpointDef { File = homeFile, Line = 15 });
+                        w1.ShowToolWindowsForPreview("project", "problems");
+                    });
+                });
+                foreach (var b in NeoIDE.Services.Debug.Breakpoints.All.ToList()) NeoIDE.Services.Debug.Breakpoints.Remove(b);
+                w1.EditorForPreview!.Document.Text = homeOriginal;
+                w1.Close();
+                File.WriteAllText(homeFile, homeOriginal);
+
+                // 2. terminal (ConPTY)
+                var w2 = new NeoIDE.MainWindow();
+                Snap(w2, $"v2-terminal-{tn0}", 1500, 860, () =>
+                {
+                    w2.OpenProject(project);
+                    w2.ShowToolWindowsForPreview("project", "terminal");
+                    After(2, () =>
+                    {
+                        var sh = w2.ShellForPreview(NeoIDE.Controls.Terminal.ShellKind.PowerShell);
+                        After(2.5, () => sh.SendText("Get-ChildItem src | Select-Object Mode, Name | Format-Table -AutoSize; Write-Host 'NeoIDE terminal' -ForegroundColor Green; php -v\r"));
+                    });
+                });
+                w2.Close();
+
+                // 3. debugger paused by a (fake) Xdebug
+                var w3 = new NeoIDE.MainWindow();
+                var port = 19600 + Random.Shared.Next(300);
+                var dbgpCommands = new List<string>();
+                Snap(w3, $"v2-debug-{tn0}", 1500, 860, () =>
+                {
+                    w3.OpenProject(project);
+                    After(2.5, () =>
+                    {
+                        NeoIDE.Services.Debug.Breakpoints.Add(new BreakpointDef { File = homeFile, Line = 16 });
+                        NeoIDE.Services.Debug.DebugService.StartListening(port, out _);
+                        _ = Task.Run(() => FakeXdebug.ServeAsync(port, project, homeFile, 16, dbgpCommands));
+                    });
+                });
+                NeoIDE.Services.Debug.DebugService.StopListening();
+                foreach (var b in NeoIDE.Services.Debug.Breakpoints.All.ToList()) NeoIDE.Services.Debug.Breakpoints.Remove(b);
+                w3.Close();
+                Console.WriteLine("DBGP " + string.Join(" | ", dbgpCommands.Select(c => c.Split(" -- ")[0])));
+                continue;
+            }
             if (onlyWhat == "packages")
             {
                 Workspace.Open(project);
@@ -638,5 +702,191 @@ Check("partial commit leaves unselected files", commitCode == 0 && NeoIDE.Servic
     string.Join(",", NeoIDE.Services.Git.GitService.Status!.Changes.Select(c => c.Path)));
 try { Directory.Delete(repo, true); } catch { }
 
+// ---- 2.0: NeoPHP names, diagnostics, terminal screen, debugger protocol
+{
+    NeoProject.Build(args[0]);
+    var home = NeoProject.Route("home");
+    Check("NeoPHP routes from #[Route] attributes", home != null && home.Path == "/" && home.Methods == "GET" && home.Controller == "App\\Controller\\HomeController::index",
+        home == null ? string.Join(",", NeoProject.RouteNames) : $"{home.Path} {home.Methods} {home.Controller}");
+    Check("NeoPHP templates (name with and without extension)", NeoProject.Template("home/index") is { } t1 && t1.EndsWith("index.php") && NeoProject.Template("base") != null && NeoProject.Template("home/index.php") == t1);
+    Check("NeoPHP .env variables", NeoProject.Env("APP_ENV") is { Count: > 0 } envDefs && envDefs[^1].Value.Length > 0 && NeoProject.EnvNames.Contains("APP_SECRET"));
+
+    var neoPhp = "<?php\nclass X extends AbstractController {\n  function a() {\n    $this->redirectToRoute('home');\n    $this->generateUrl('homee');\n    return $this->render('home/index', []);\n  }\n  function b() { return $this->render('nope/missing'); }\n  function c() { return $this->render('a/' . $x); }\n  function d() { return $_ENV['APP_ENV'] . getenv('NOPE_VAR'); }\n}\n";
+    var refs = NeoInsight.All(neoPhp, "PHP");
+    Check("NeoInsight finds routes, templates, env", refs.Count(r => r.Kind == NeoRefKind.Route) == 2 && refs.Count(r => r.Kind == NeoRefKind.Template) == 3 && refs.Count(r => r.Kind == NeoRefKind.Env) == 2,
+        string.Join(" | ", refs.Select(r => $"{r.Kind}:{r.Value}")));
+    var problems = NeoInsight.Check(neoPhp, "PHP");
+    Check("NeoPHP checks: unknown route (with suggestion) and template, dynamic name skipped",
+        problems.Count == 2 && problems.Any(p => p.Message.Contains("Unknown route 'homee'") && p.Message.Contains("did you mean 'home'")) && problems.Any(p => p.Message.Contains("nope/missing")),
+        string.Join(" | ", problems.Select(p => p.Message)));
+    var at = NeoInsight.At(neoPhp, neoPhp.IndexOf("home/index") + 3, "PHP");
+    Check("NeoInsight resolves a template under the caret", at != null && NeoInsight.Resolve(at)?.File.EndsWith("index.php") == true);
+    var comp = NeoInsight.Complete("$this->redirectToRoute('')", "$this->redirectToRoute('".Length, "PHP");
+    Check("NeoPHP completion of route names", comp != null && comp.Value.entries.Any(e => e.Label == "home"));
+    var yaml = "app:\n  secret: '%env(APP_SECRET)%'\n  other: '%env(bool:MISSING_FLAG)%'\n  root: '%kernel.root_path%/x'\n  bad: '%unknown.param%'\n";
+    var yamlProblems = NeoInsight.Check(yaml, "YAML");
+    Check("YAML checks: %env()% and %parameters%", yamlProblems.Count == 2 && yamlProblems.Any(p => p.Message.Contains("MISSING_FLAG")) && yamlProblems.Any(p => p.Message.Contains("unknown.param")),
+        string.Join(" | ", yamlProblems.Select(p => p.Message)));
+    var twig = "{% extends 'base.html.twig' %}\n<a href=\"{{ path('home') }}\">{{ include('partials/nope') }}</a>";
+    var twigRefs = NeoInsight.All(twig, "Twig");
+    Check("Twig references", twigRefs.Count(r => r.Kind == NeoRefKind.Template) == 2 && twigRefs.Any(r => r.Kind == NeoRefKind.Route && r.Value == "home"), string.Join(" | ", twigRefs.Select(r => $"{r.Kind}:{r.Value}")));
+
+    // php -l on a buffer
+    Workspace.PhpExe ??= (await PhpLocator.GetDefaultAsync())?.Path;
+    var lint = await NeoIDE.Services.Diagnostics.Checkers.LintAsync(Path.Combine(args[0], "src", "Broken.php"), "<?php\nfunction a() {\n  echo 1\n}\n");
+    Check("php -l reports the syntax error and its line", lint.Count == 1 && lint[0].Line == 4 && lint[0].Severity == NeoIDE.Services.Diagnostics.Severity.Error, string.Join(" | ", lint.Select(d => $"{d.Line}: {d.Message}")));
+    var lintOk = await NeoIDE.Services.Diagnostics.Checkers.LintAsync(Path.Combine(args[0], "src", "Ok.php"), "<?php\necho 1;\n");
+    Check("php -l: valid file has no problem", lintOk.Count == 0);
+
+    // diagnostics store
+    var f = Path.Combine(args[0], "src", "X.php");
+    NeoIDE.Services.Diagnostics.DiagnosticsStore.Set(f, "phpstan", new[] { new NeoIDE.Services.Diagnostics.Diagnostic(f, 3, 0, NeoIDE.Services.Diagnostics.Severity.Error, "m", "phpstan") });
+    NeoIDE.Services.Diagnostics.DiagnosticsStore.Set(f, "php", new[] { new NeoIDE.Services.Diagnostics.Diagnostic(f, 2, 0, NeoIDE.Services.Diagnostics.Severity.Warning, "w", "php") });
+    var cnt = NeoIDE.Services.Diagnostics.DiagnosticsStore.Count(f);
+    NeoIDE.Services.Diagnostics.DiagnosticsStore.SetProject("phpstan", Array.Empty<NeoIDE.Services.Diagnostics.Diagnostic>());
+    Check("diagnostics store by source", cnt == (1, 1) && NeoIDE.Services.Diagnostics.DiagnosticsStore.Count(f) == (0, 1));
+    NeoIDE.Services.Diagnostics.DiagnosticsStore.Clear();
+
+    // VT screen
+    var vt = new NeoIDE.Controls.Terminal.VtScreen(20, 4);
+    vt.Feed("\x1b[31mred\x1b[0m ok\r\nline2\r\n\x1b[2;3Hx\x1b[K");
+    Check("VT: colours, CR/LF, cursor position, erase line",
+        NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(0)) == "red ok" && vt.Line(0)[0].Fg == 1 && vt.Line(0)[4].Fg == -1 && NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(1)) == "lix",
+        NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(0)) + "|" + NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(1)));
+    vt.Feed("\x1b[4;1H" + "a\r\nb\r\nc\r\nd");
+    Check("VT: scrolling feeds the scrollback", vt.Scrollback.Count == 3 && NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(3)) == "d", $"scrollback={vt.Scrollback.Count}");
+    vt.Feed("\x1b[?1049h\x1b[2J\x1b[Hfull\x1b[?1049l");
+    Check("VT: alternate screen restores the main screen", NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(3)) == "d" && !vt.AltScreen);
+    string? reply = null;
+    vt.Reply += r => reply = r;
+    vt.Feed("\x1b[2;5H\x1b[6n\x1b]0;my title\x07\x1b[38;2;10;20;30mT");
+    Check("VT: cursor report, OSC title, true colour", reply == "\x1b[2;5R" && vt.Title == "my title" && vt.Line(1)[4].Fg == (0x1000000 | (10 << 16) | (20 << 8) | 30), reply ?? "no reply");
+    vt.Feed("\x1b[1;1H\x1b[2J" + new string('w', 25));
+    Check("VT: auto-wrap at the last column", NeoIDE.Controls.Terminal.VtScreen.TextOf(vt.Line(1)) == "wwwww");
+
+    // ConPTY: a real shell
+    if (NeoIDE.Controls.Terminal.PseudoConsole.IsSupported)
+    {
+        var output = new System.Text.StringBuilder();
+        var exited = new TaskCompletionSource<int>();
+        using var pty = new NeoIDE.Controls.Terminal.PseudoConsole("cmd.exe /c echo NEO_PTY_%COMPUTERNAME:~0,0%OK & exit 3", args[0], 80, 25);
+        pty.Output += s => { lock (output) output.Append(s); };
+        pty.Exited += code => exited.TrySetResult(code);
+        var done = await Task.WhenAny(exited.Task, Task.Delay(10000));
+        await Task.Delay(300);
+        string all;
+        lock (output) all = output.ToString();
+        Check("ConPTY runs a shell, streams its VT output and exit code", done == exited.Task && exited.Task.Result == 3 && all.Contains("NEO_PTY_OK"), all.Replace("\x1b", "^[").Trim());
+    }
+
+    // debugger: a fake Xdebug client speaks DBGp to the IDE
+    await DbgpFakeClientTest();
+}
+
 Console.WriteLine(failures == 0 ? "\nALL PASSED" : $"\n{failures} FAILURE(S)");
 return failures;
+
+// A fake Xdebug: connects to the IDE like PHP does, answers the DBGp commands, stops at the breakpoint.
+async Task DbgpFakeClientTest()
+{
+    var port = 19003 + Random.Shared.Next(500);
+    Workspace.Open(args[0]);
+    var bpFile = Path.GetFullPath(Path.Combine(args[0], "src", "Controller", "HomeController.php"));
+    var bp = new BreakpointDef { File = bpFile, Line = 16 };
+    NeoIDE.Services.Debug.Breakpoints.Add(bp);
+    var listening = NeoIDE.Services.Debug.DebugService.StartListening(port, out var listenError);
+    Check("debugger listens for Xdebug", listening, listenError ?? "");
+    if (!listening) return;
+    var uri = new Uri(bpFile).AbsoluteUri;
+    var commands = new List<string>();
+    using var client = new System.Net.Sockets.TcpClient();
+    await client.ConnectAsync("127.0.0.1", port);
+    var s = client.GetStream();
+    const string NS = "xmlns=\"urn:debugger_protocol_v1\" xmlns:xdebug=\"https://xdebug.org/dbgp/xdebug\"";
+    async Task Send(string xml)
+    {
+        var body = System.Text.Encoding.UTF8.GetBytes("<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>\n" + xml);
+        await s.WriteAsync(System.Text.Encoding.ASCII.GetBytes(body.Length.ToString()));
+        s.WriteByte(0);
+        await s.WriteAsync(body);
+        s.WriteByte(0);
+    }
+    async Task<string?> Read()
+    {
+        var bytes = new List<byte>();
+        var one = new byte[1];
+        while (true)
+        {
+            if (await s.ReadAsync(one) == 0) return null;
+            if (one[0] == 0) return System.Text.Encoding.UTF8.GetString(bytes.ToArray());
+            bytes.Add(one[0]);
+        }
+    }
+    string B64(string v) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(v));
+    var runs = 0;
+    var server = Task.Run(async () =>
+    {
+        await Send($"<init {NS} fileuri=\"{new Uri(Path.Combine(args[0], "public", "index.php")).AbsoluteUri}\" language=\"PHP\" protocol_version=\"1.0\" appid=\"1\" idekey=\"NEOIDE\"><engine version=\"3.4.0\"><![CDATA[Xdebug]]></engine></init>");
+        while (true)
+        {
+            var cmd = await Read();
+            if (cmd == null) return;
+            lock (commands) commands.Add(cmd);
+            var name = cmd.Split(' ')[0];
+            var id = System.Text.RegularExpressions.Regex.Match(cmd, @"-i (\d+)").Groups[1].Value;
+            switch (name)
+            {
+                case "breakpoint_set": await Send($"<response {NS} command=\"breakpoint_set\" transaction_id=\"{id}\" id=\"1000\"/>"); break;
+                case "run" when ++runs == 1:
+                    await Send($"<response {NS} command=\"run\" transaction_id=\"{id}\" status=\"break\" reason=\"ok\"><xdebug:message filename=\"{uri}\" lineno=\"16\"></xdebug:message></response>");
+                    break;
+                case "run": await Send($"<response {NS} command=\"run\" transaction_id=\"{id}\" status=\"stopping\" reason=\"ok\"/>"); break;
+                case "stop": await Send($"<response {NS} command=\"stop\" transaction_id=\"{id}\" status=\"stopped\" reason=\"ok\"/>"); client.Close(); return;
+                case "stack_get":
+                    await Send($"<response {NS} command=\"stack_get\" transaction_id=\"{id}\"><stack where=\"App\\Controller\\HomeController-&gt;index\" level=\"0\" type=\"file\" filename=\"{uri}\" lineno=\"16\"></stack><stack where=\"{{main}}\" level=\"1\" type=\"file\" filename=\"file:///C:/x/public/index.php\" lineno=\"5\"></stack></response>");
+                    break;
+                case "context_get" when cmd.Contains("-c 0"):
+                    await Send($"<response {NS} command=\"context_get\" transaction_id=\"{id}\" context=\"0\">" +
+                               $"<property name=\"$title\" fullname=\"$title\" type=\"string\" size=\"7\" encoding=\"base64\"><![CDATA[{B64("Welcome")}]]></property>" +
+                               "<property name=\"$items\" fullname=\"$items\" type=\"array\" children=\"1\" numchildren=\"2\" page=\"0\" pagesize=\"200\"></property>" +
+                               "<property name=\"$n\" fullname=\"$n\" type=\"int\"><![CDATA[3]]></property></response>");
+                    break;
+                case "context_get": await Send($"<response {NS} command=\"context_get\" transaction_id=\"{id}\" context=\"1\"></response>"); break;
+                case "property_get":
+                    await Send($"<response {NS} command=\"property_get\" transaction_id=\"{id}\"><property name=\"$items\" fullname=\"$items\" type=\"array\" children=\"1\" numchildren=\"2\" page=\"0\" pagesize=\"200\">" +
+                               "<property name=\"0\" fullname=\"$items[0]\" type=\"string\" encoding=\"base64\"><![CDATA[" + B64("a") + "]]></property>" +
+                               "<property name=\"1\" fullname=\"$items[1]\" type=\"bool\"><![CDATA[1]]></property></property></response>");
+                    break;
+                case "eval":
+                    var expr = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cmd[(cmd.IndexOf(" -- ") + 4)..]));
+                    await Send($"<response {NS} command=\"eval\" transaction_id=\"{id}\"><property type=\"int\"><![CDATA[{(expr == "6*7" ? 42 : 0)}]]></property></response>");
+                    break;
+                default: await Send($"<response {NS} command=\"{name}\" transaction_id=\"{id}\" success=\"1\"/>"); break;
+            }
+        }
+    });
+    async Task<bool> WaitFor(Func<bool> cond)
+    {
+        for (int i = 0; i < 100 && !cond(); i++) await Task.Delay(50);
+        return cond();
+    }
+    var paused = await WaitFor(() => NeoIDE.Services.Debug.DebugService.State == NeoIDE.Services.Debug.DebugState.Paused);
+    var pos = NeoIDE.Services.Debug.DebugService.Position;
+    string bpCmd;
+    lock (commands) bpCmd = commands.FirstOrDefault(c => c.StartsWith("breakpoint_set")) ?? "";
+    Check("DBGp: breakpoint sent with the file URI and the line", bpCmd.Contains($"-f {uri}") && bpCmd.Contains("-n 16"), bpCmd);
+    Check("DBGp: paused at the breakpoint, stack read", paused && pos?.file == bpFile && pos?.line == 16 && NeoIDE.Services.Debug.DebugService.Stack.Count == 2
+        && NeoIDE.Services.Debug.DebugService.Stack[0].Where == "App\\Controller\\HomeController->index", $"{NeoIDE.Services.Debug.DebugService.State} {pos}");
+    var vars = await NeoIDE.Services.Debug.DebugService.Variables(0);
+    Check("DBGp: variables (base64 string, array, int)", vars.Count == 3 && vars[0].Display == "\"Welcome\"" && vars[1].Display == "array(2)" && vars[1].HasChildren && vars[2].Display == "3",
+        string.Join(", ", vars.Select(v => $"{v.Name}={v.Display}")));
+    var children = vars.Count > 1 ? await NeoIDE.Services.Debug.DebugService.Children(vars[1], 0) : new();
+    Check("DBGp: children of an array", children.Count == 2 && children[0].Display == "\"a\"" && children[1].Display == "true", string.Join(", ", children.Select(v => $"{v.Name}={v.Display}")));
+    var (value, evalError) = await NeoIDE.Services.Debug.DebugService.Evaluate("6*7");
+    Check("DBGp: evaluate an expression", value?.Display == "42", evalError ?? value?.Display ?? "");
+    await NeoIDE.Services.Debug.DebugService.Resume();
+    var ended = await WaitFor(() => NeoIDE.Services.Debug.DebugService.State == NeoIDE.Services.Debug.DebugState.Listening);
+    Check("DBGp: end of the script closes the session", ended && server.IsCompleted, NeoIDE.Services.Debug.DebugService.State.ToString());
+    NeoIDE.Services.Debug.DebugService.StopListening();
+    NeoIDE.Services.Debug.Breakpoints.Remove(bp);
+}

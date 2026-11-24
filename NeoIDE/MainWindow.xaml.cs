@@ -11,7 +11,10 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using NeoIDE.Controls;
+using NeoIDE.Controls.Terminal;
 using NeoIDE.Dialogs;
+using NeoIDE.Services.Debug;
+using NeoIDE.Services.Diagnostics;
 using NeoIDE.Editor;
 using NeoIDE.Php;
 using NeoIDE.Services;
@@ -84,10 +87,12 @@ public partial class MainWindow : Window, IIdeShell
         ThemeManager.ThemeChanged += () => { UpdateThemeMenu(); _root?.RefreshKinds(); };
         RunConsole.RunningChanged += running => Dispatcher.Invoke(() =>
         {
-            RunButton.IsEnabled = !running;
-            StopButton.IsEnabled = running;
+            RunButton.IsEnabled = DebugButton.IsEnabled = !running;
+            StopButton.IsEnabled = running || DebugService.State is DebugState.Running or DebugState.Paused;
         });
         UpdateEmptyHint();
+        InitProblems();
+        InitDebugger();
     }
 
     // ================================================================== project
@@ -96,6 +101,10 @@ public partial class MainWindow : Window, IIdeShell
     {
         path = Path.GetFullPath(path);
         Workspace.Open(path);
+        DiagnosticsStore.Clear();
+        NeoProject.Clear();
+        var neoRoot = path;
+        _ = Task.Run(() => { try { NeoProject.Build(neoRoot); } catch { } });
         AppSettings.Current.AddRecent(path);
         Title = $"{Workspace.Name} — NeoIDE";
         ProjectTitle.Text = Workspace.Name;
@@ -202,6 +211,9 @@ public partial class MainWindow : Window, IIdeShell
         SaveSession();
         RunConsole.Stop();
         foreach (var c in AllTerminals()) c.Stop();
+        foreach (var s in AllShells()) s.Stop();
+        DebugService.StopListening();
+        foreach (var t in _tabs) t.Editor?.Detach(); // the editors listen to static events (theme, problems, breakpoints)
         _watcher?.Dispose();
         IdeHost.Instance.RaiseProjectClosed();
     }
@@ -224,6 +236,7 @@ public partial class MainWindow : Window, IIdeShell
     {
         var rel = Workspace.Root != null ? Path.GetRelativePath(Workspace.Root, path) : path;
         if (rel.StartsWith(".git") || rel.StartsWith("var\\") || rel.StartsWith(".neoide") || rel.StartsWith(".idea")) return;
+        NeoProject.Invalidate(path);
         lock (_pendingFsChanges) _pendingFsChanges.Add(path);
         Dispatcher.BeginInvoke(() => { _fsTimer.Stop(); _fsTimer.Start(); });
     }
@@ -481,7 +494,11 @@ public partial class MainWindow : Window, IIdeShell
             tab.LastWrite = File.GetLastWriteTimeUtc(tab.Path);
             tab.Dirty = false;
             UpdateTabTitle(tab);
-            if (tab.Path.EndsWith(".php", StringComparison.OrdinalIgnoreCase)) Workspace.Index.UpdateFile(tab.Path, tab.Editor.Text);
+            if (tab.Path.EndsWith(".php", StringComparison.OrdinalIgnoreCase))
+            {
+                Workspace.Index.UpdateFile(tab.Path, tab.Editor.Text);
+                PhpStanOnSave(tab.Path);
+            }
             if (Path.GetFileName(tab.Path).Equals("composer.json", StringComparison.OrdinalIgnoreCase))
                 SetStatus("composer.json saved — run NeoPHP › Composer › update to apply the changes");
         }
@@ -503,8 +520,12 @@ public partial class MainWindow : Window, IIdeShell
         if (tab == null)
         {
             StatusLanguage.Text = StatusPosition.Text = StatusEol.Text = StatusIndent.Text = "";
+            ProblemsView.CurrentFileChanged();
+            RefreshProblemsStatus();
             return;
         }
+        ProblemsView.CurrentFileChanged();
+        RefreshProblemsStatus();
         foreach (var t in _tabs.Where(t => t != tab && t.Dirty)) Save(t);
         var ed = tab.Editor;
         StatusLanguage.Text = SyntaxRegistry.DisplayName(ed?.Language ?? (ImageExt.Contains(Path.GetExtension(tab.Path)) ? "Image" : null));
@@ -629,25 +650,33 @@ public partial class MainWindow : Window, IIdeShell
             if (BottomRow.Height.Value > 0) _bottomHeight = BottomRow.Height.Value;
             BottomRow.Height = new GridLength(0);
             BottomSplitterRow.Height = new GridLength(0);
-            RunToggle.IsChecked = TerminalToggle.IsChecked = ProblemsToggle.IsChecked = GitToggle.IsChecked = false;
+            RunToggle.IsChecked = TerminalToggle.IsChecked = ProblemsToggle.IsChecked = GitToggle.IsChecked = DebugToggle.IsChecked = FindToggle.IsChecked = false;
             SyncPluginBottomPanels(null);
             CurrentEditor?.TextArea.Focus();
             return;
         }
         BottomRow.Height = new GridLength(_bottomHeight);
         BottomSplitterRow.Height = new GridLength(1);
-        BottomTabs.SelectedItem = PluginBottomTab(which) ?? (which switch { "terminal" => TerminalTab, "problems" => FindTab, "git" => GitTab, _ => RunTab });
+        BottomTabs.SelectedItem = PluginBottomTab(which) ?? BuiltInBottomTab(which);
         SyncPluginBottomPanels(which);
         GitToggle.IsChecked = which == "git";
         if (which == "git") _ = GitLogView.LoadAsync();
         RunToggle.IsChecked = which == "run";
         TerminalToggle.IsChecked = which == "terminal";
         ProblemsToggle.IsChecked = which == "problems";
-        if (which == "terminal") Dispatcher.BeginInvoke(() => TerminalConsole.FocusInput(), DispatcherPriority.Input);
+        DebugToggle.IsChecked = which == "debug";
+        FindToggle.IsChecked = which == "find";
+        if (which == "problems") ProblemsView.Rebuild();
+        if (which == "terminal") Dispatcher.BeginInvoke(FocusSelectedTerminal, DispatcherPriority.Input);
     }
 
+    private TabItem BuiltInBottomTab(string? which) => which switch
+    {
+        "terminal" => TerminalTab, "problems" => ProblemsTab, "find" => FindTab, "git" => GitTab, "debug" => DebugTab, _ => RunTab,
+    };
+
     private bool IsBottomVisible(string which) => BottomRow.Height.Value > 0 &&
-        BottomTabs.SelectedItem == (PluginBottomTab(which) ?? (which switch { "terminal" => TerminalTab, "problems" => FindTab, "git" => GitTab, _ => (TabItem)RunTab }));
+        BottomTabs.SelectedItem == (PluginBottomTab(which) ?? BuiltInBottomTab(which));
 
     private void BottomToggle_Click(object sender, RoutedEventArgs e)
     {
@@ -660,7 +689,11 @@ public partial class MainWindow : Window, IIdeShell
     private void ClearConsole_Click(object sender, RoutedEventArgs e)
     {
         if (BottomTabs.SelectedItem == RunTab) RunConsole.Clear();
-        else if (BottomTabs.SelectedItem == TerminalTab) TerminalConsole.Clear();
+        else if (BottomTabs.SelectedItem == TerminalTab)
+        {
+            if (SelectedTerminalContent is TerminalView shell) shell.Clear();
+            else if (SelectedTerminalContent is ConsoleView console) console.Clear();
+        }
         else if (BottomTabs.SelectedItem == FindTab) FindResults.ItemsSource = null;
     }
 
@@ -669,9 +702,22 @@ public partial class MainWindow : Window, IIdeShell
 
     // ================================================================== terminals
 
-    private ConsoleView TerminalConsole => (TerminalTabs.SelectedItem as TabItem)?.Content as ConsoleView ?? NewTerminal(ConsoleKind.PowerShell);
+    /// <summary>A console able to run a command (RunAsync): the NeoConsole.</summary>
+    private ConsoleView TerminalConsole => Terminal(ConsoleKind.Neo);
+
+    private object? SelectedTerminalContent => (TerminalTabs.SelectedItem as TabItem)?.Content;
+
+    private void FocusSelectedTerminal()
+    {
+        if (TerminalTabs.Items.Count == 0) NewShell(DefaultShell);
+        if (SelectedTerminalContent is TerminalView shell) shell.Focus();
+        else if (SelectedTerminalContent is ConsoleView console) console.FocusInput();
+    }
+
+    private static ShellKind DefaultShell => TerminalView.Executable(ShellKind.Pwsh) != null ? ShellKind.Pwsh : ShellKind.PowerShell;
 
     private IEnumerable<ConsoleView> AllTerminals() => TerminalTabs.Items.OfType<TabItem>().Select(t => t.Content).OfType<ConsoleView>();
+    private IEnumerable<TerminalView> AllShells() => TerminalTabs.Items.OfType<TabItem>().Select(t => t.Content).OfType<TerminalView>();
 
     /// <summary>Existing session of that kind, or a new one.</summary>
     private ConsoleView Terminal(ConsoleKind kind)
@@ -684,10 +730,81 @@ public partial class MainWindow : Window, IIdeShell
     private void ResetTerminals(string root)
     {
         foreach (var c in AllTerminals()) c.Stop();
+        foreach (var s in AllShells()) s.Stop();
         TerminalTabs.Items.Clear();
-        NewTerminal(ConsoleKind.PowerShell, root, select: false);
+        if (PseudoConsole.IsSupported) NewShell(DefaultShell, root, select: false);
+        else NewTerminal(ConsoleKind.PowerShell, root, select: false);
         NewTerminal(ConsoleKind.Neo, root, select: false);
         TerminalTabs.SelectedIndex = 0;
+    }
+
+    private static string ShellTitle(ShellKind kind) => kind switch
+    {
+        ShellKind.Pwsh => "PowerShell 7",
+        ShellKind.PowerShell => "PowerShell",
+        ShellKind.Cmd => "Command Prompt",
+        ShellKind.GitBash => "Git Bash",
+        ShellKind.Wsl => "WSL",
+        _ => "Terminal",
+    };
+
+    /// <summary>A real terminal (ConPTY) in a new tab of the Terminal tool window.</summary>
+    private TerminalView NewShell(ShellKind kind, string? cwd = null, bool select = true)
+    {
+        var view = new TerminalView(kind, cwd ?? Workspace.Root ?? Environment.CurrentDirectory);
+        var title = ShellTitle(kind);
+        var same = AllShells().Count(s => s.Shell == kind);
+        if (same > 0) title += $" ({same + 1})";
+        var header = new StackPanel { Orientation = Orientation.Horizontal };
+        header.Children.Add(new TextBlock
+        {
+            Text = kind switch { ShellKind.Cmd => ">", ShellKind.GitBash or ShellKind.Wsl => "$", _ => "PS" },
+            FontSize = 9, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center,
+            Foreground = ThemeManager.Brush("FgSecondary"),
+        });
+        var titleBlock = new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center };
+        header.Children.Add(titleBlock);
+        var close = new Button
+        {
+            Style = (Style)FindResource("ToolButton"), Padding = new Thickness(3), Margin = new Thickness(6, 0, 0, 0),
+            Content = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 8, Foreground = ThemeManager.Brush("FgSecondary") },
+            ToolTip = "Close session",
+        };
+        header.Children.Add(close);
+        var tab = new TabItem { Header = header, Content = view, Style = (Style)FindResource("ToolTabItem") };
+        void Close() { view.Stop(); TerminalTabs.Items.Remove(tab); }
+        close.Click += (_, _) => Close();
+        tab.MouseDown += (_, e) => { if (e.ChangedButton == MouseButton.Middle) Close(); };
+        view.TitleChanged += () => tab.ToolTip = view.Title;
+        view.LinkClicked += OnTerminalLink;
+        TerminalTabs.Items.Add(tab);
+        if (select)
+        {
+            TerminalTabs.SelectedItem = tab;
+            Dispatcher.BeginInvoke(() => view.Focus(), DispatcherPriority.Input);
+        }
+        return view;
+    }
+
+    /// <summary>Ctrl+click in a terminal: URL → browser, "src/Foo.php:12" → editor.</summary>
+    private void OnTerminalLink(string link, string cwd)
+    {
+        if (link.StartsWith("http://") || link.StartsWith("https://"))
+        {
+            try { Process.Start(new ProcessStartInfo(link) { UseShellExecute = true }); } catch { }
+            return;
+        }
+        var m = Regex.Match(link, @"^(?<path>.+?)(?:(?::|\()(?<line>\d+)\)?)?$");
+        var rel = m.Groups["path"].Value.Replace('/', '\\');
+        foreach (var dir in new[] { cwd, Workspace.Root }.Where(d => d != null))
+        {
+            string full;
+            try { full = Path.GetFullPath(Path.IsPathRooted(rel) ? rel : Path.Combine(dir!, rel)); } catch { continue; }
+            if (!File.Exists(full)) continue;
+            OpenFileAt(full, m.Groups["line"].Success ? int.Parse(m.Groups["line"].Value) : 0);
+            return;
+        }
+        SetStatus($"File not found: {link}");
     }
 
     private static string TerminalTitle(ConsoleKind kind) => kind switch
@@ -743,10 +860,22 @@ public partial class MainWindow : Window, IIdeShell
             mi.Click += (_, _) => { NewTerminal(kind); ShowBottom("terminal"); };
             menu.Items.Add(mi);
         }
+        void AddShell(ShellKind kind)
+        {
+            var available = TerminalView.Executable(kind) != null && PseudoConsole.IsSupported;
+            var mi = new MenuItem { Header = ShellTitle(kind) + (available ? "" : " (not installed)"), IsEnabled = available };
+            mi.Click += (_, _) => { NewShell(kind); ShowBottom("terminal"); };
+            menu.Items.Add(mi);
+        }
         Add("NeoConsole (php bin/neo)", ConsoleKind.Neo);
-        Add("PowerShell", ConsoleKind.PowerShell);
-        Add("Command Prompt", ConsoleKind.Cmd);
-        Add(ConsoleView.GitBashPath != null ? "Git Bash" : "Git Bash (not installed)", ConsoleKind.Bash, ConsoleView.GitBashPath != null);
+        menu.Items.Add(new Separator());
+        if (TerminalView.Executable(ShellKind.Pwsh) != null) AddShell(ShellKind.Pwsh);
+        AddShell(ShellKind.PowerShell);
+        AddShell(ShellKind.Cmd);
+        AddShell(ShellKind.GitBash);
+        if (TerminalView.Executable(ShellKind.Wsl) != null) AddShell(ShellKind.Wsl);
+        menu.Items.Add(new Separator());
+        Add("PowerShell (one command at a time)", ConsoleKind.PowerShell);
         menu.IsOpen = true;
     }
 
@@ -771,7 +900,11 @@ public partial class MainWindow : Window, IIdeShell
         await RunConsole.RunAsync(Workspace.PhpExe!, $"{NeoScript} serve --port={port} --no-ansi", Workspace.Root, $"php {NeoScript} serve --port={port}");
     }
 
-    private void Stop_Click(object sender, RoutedEventArgs e) => RunConsole.Stop();
+    private void Stop_Click(object sender, RoutedEventArgs e)
+    {
+        if (DebugService.State is DebugState.Paused or DebugState.Running) _ = DebugService.Stop();
+        RunConsole.Stop();
+    }
 
     private void OpenBrowser_Click(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo($"http://127.0.0.1:{Workspace.Settings.ServerPort}") { UseShellExecute = true });
@@ -1320,7 +1453,8 @@ public partial class MainWindow : Window, IIdeShell
 
     private void OpenInTerminal_Click(object sender, RoutedEventArgs e)
     {
-        NewTerminal(ConsoleKind.PowerShell, SelectedDirectory());
+        if (PseudoConsole.IsSupported) NewShell(DefaultShell, SelectedDirectory());
+        else NewTerminal(ConsoleKind.PowerShell, SelectedDirectory());
         ShowBottom("terminal");
     }
 
@@ -1350,7 +1484,7 @@ public partial class MainWindow : Window, IIdeShell
         var initial = CurrentEditor?.SelectedText is { Length: > 0 and < 100 } s ? s : "";
         var query = InputDialog.Ask("Find in Files", "Text to find (project files, vendor excluded):", initial);
         if (string.IsNullOrEmpty(query)) return;
-        ShowBottom("problems");
+        ShowBottom("find");
         FindTab.Header = "Find: searching…";
         var root = Workspace.Root;
         var results = await Task.Run(() =>
@@ -1420,8 +1554,35 @@ public partial class MainWindow : Window, IIdeShell
 
         bool Handle(Action a) { a(); e.Handled = true; return true; }
 
+        // a terminal gets every key (Ctrl+K, Ctrl+T, F7, Esc… belong to the shell) except the tool window shortcuts
+        if (Keyboard.FocusedElement is TerminalView)
+        {
+            var toolWindowKey = mods == ModifierKeys.Alt && key is Key.F12 or (>= Key.D0 and <= Key.D9) || mods == (ModifierKeys.Control | ModifierKeys.Alt) && key == Key.S;
+            if (!toolWindowKey) return;
+        }
+
+        // debugger keys (PhpStorm keymap) while a script is debugged
+        var debugging = DebugService.State is DebugState.Paused or DebugState.Running;
+        if (debugging)
+        {
+            var handled = (key, mods) switch
+            {
+                (Key.F9, ModifierKeys.None) => Handle(() => _ = DebugService.Resume()),
+                (Key.F8, ModifierKeys.None) => Handle(() => _ = DebugService.StepOver()),
+                (Key.F7, ModifierKeys.None) => Handle(() => _ = DebugService.StepInto()),
+                (Key.F8, ModifierKeys.Shift) => Handle(() => _ = DebugService.StepOut()),
+                (Key.F8, ModifierKeys.Alt) => Handle(() => DebugEvaluate_Click(this, e)),
+                (Key.F2, ModifierKeys.Control) => Handle(() => Stop_Click(this, e)),
+                _ => false,
+            };
+            if (handled) return;
+        }
+
         _ = (key, mods) switch
         {
+            (Key.D5, ModifierKeys.Alt) => Handle(() => ShowBottom(IsBottomVisible("debug") ? null : "debug")),
+            (Key.D6, ModifierKeys.Alt) => Handle(() => ShowBottom(IsBottomVisible("problems") ? null : "problems")),
+            (Key.F9, ModifierKeys.Shift) => Handle(() => DebugServer_Click(this, e)),
             (Key.S, ModifierKeys.Control) => Handle(() => { SaveAll(); SetStatus("All files saved"); }),
             (Key.K, ModifierKeys.Control) => Handle(() => GitCommitPanel_Click(this, e)),
             (Key.K, ModifierKeys.Control | ModifierKeys.Shift) => Handle(() => GitPush_Click(this, e)),
@@ -1450,7 +1611,7 @@ public partial class MainWindow : Window, IIdeShell
             (Key.OemMinus, ModifierKeys.Control) or (Key.Subtract, ModifierKeys.Control) => Handle(() => ChangeFont(-1)),
             (Key.Tab, ModifierKeys.Control) => Handle(() => CycleTab(1)),
             (Key.Tab, ModifierKeys.Control | ModifierKeys.Shift) => Handle(() => CycleTab(-1)),
-            (Key.Escape, ModifierKeys.None) when BottomRow.Height.Value > 0 && Keyboard.FocusedElement is not ICSharpCode.AvalonEdit.Editing.TextArea && !IsInside(TerminalConsole)
+            (Key.Escape, ModifierKeys.None) when BottomRow.Height.Value > 0 && Keyboard.FocusedElement is not ICSharpCode.AvalonEdit.Editing.TextArea && !IsInside(TerminalTabs)
                 => Handle(() => ShowBottom(null)),
             _ => false,
         };
@@ -1631,7 +1792,9 @@ public partial class MainWindow : Window, IIdeShell
         "Ctrl+Space   Completion\nAlt+Enter   Quick fixes (import class)\nCtrl+Alt+O   Optimize imports\nCtrl+D   Duplicate line\n" +
         "Ctrl+Y   Delete line\nCtrl+/   Comment line\nCtrl+Shift+↑/↓   Move line\nCtrl+F   Find   ·   Ctrl+Shift+F   Find in files\n" +
         "Alt+Insert   New file\nAlt+1   Project   ·   Alt+7   Structure\nAlt+F12   Terminal   ·   Alt+4   Run\n" +
-        "Shift+F10   php bin/neo serve   ·   Ctrl+F2   Stop\nCtrl+Shift+X   Run a neo command\nCtrl+Alt+S   Settings");
+        "Shift+F10   php bin/neo serve   ·   Ctrl+F2   Stop\nCtrl+Shift+X   Run a neo command\nCtrl+Alt+S   Settings\n\n" +
+        "F2 / Shift+F2   Next / previous problem   ·   Alt+6   Problems\n" +
+        "Shift+F9   Debug bin/neo serve   ·   Alt+5   Debug\nCtrl+F8   Toggle breakpoint   ·   F9   Resume\nF8   Step over   ·   F7   Step into   ·   Shift+F8   Step out\nAlt+F8   Evaluate expression");
 
     private void CheckUpdates_Click(object sender, RoutedEventArgs e) => UpdateDialog.ShowFor();
 

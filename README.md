@@ -5,9 +5,18 @@ The IDE of the [NeoPHP](https://github.com/NeoPHP-Framework) framework — a Php
 - **New NeoPHP project** wizard (`composer create-project neophp/skeleton`, PHP version, Composer setup)
 - **PHP intelligence**: completion through inheritance, traits, interfaces and abstract classes, automatic `use` imports,
   go to declaration, hover docs, missing method implementations, refactoring on rename / move
+- **NeoPHP intelligence**: Ctrl+click / completion / checks of route names (`generateUrl`, `redirectToRoute`, `path()`),
+  templates (`render`, `extend`, `include`, Twig `extends`), `.env` variables (`%env()%`, `$_ENV`), parameters (`%name%`)
+  and services; gutter icons: route of an action (open in the browser), template rendered, controllers rendering a template,
+  event of a listener
+- **Live problems**: syntax check while typing (`php -l`), PHPStan on save and on the whole project (Code › Inspect Code),
+  NeoPHP checks — underlined in the editor, error stripe, F2 / Shift+F2, Problems tool window (Alt+6)
+- **Xdebug debugger**: breakpoints (conditional), Run › Debug `bin/neo serve` / a neo command / a script, step over / into / out,
+  call stack, variables, watches, evaluate, set value, Docker path mapping (Debug tool window, Alt+5)
 - **Syntax highlighting** for PHP, Twig, HTML, CSS, JS/TS, YAML, JSON, Markdown, SQL, XML, .env… + CSS completion and colour picker
 - **Git**: changes, partial commits, log, branches, diff
-- **Consoles**: NeoConsole (`php bin/neo` with completion and interactive questions), PowerShell, Cmd, Bash
+- **Terminal**: real terminals (ConPTY) — PowerShell, PowerShell 7, Cmd, Git Bash, WSL — with colours, history, full-screen
+  programs, Ctrl+click on file paths; NeoConsole (`php bin/neo` with completion and interactive questions)
 - **Composer packages** manager, Markdown preview
 - **Themes** in JSON and **plugins** (Database MySQL / SQLite, Mercure, Routes, Logs, NeoPHP Toolbox) from the
   [NeoIDE Marketplace](https://github.com/NeoPHP-Framework/neo-ide-marketplace)
@@ -32,7 +41,7 @@ Requirements: .NET 11 SDK, Windows. Open `NeoIDE.slnx` in Rider (or `dotnet run 
 |---|---|
 | `NeoIDE/` | the application |
 | `NeoIDE.Sdk/` | plugin API (`IPlugin`, `IIde`, UI helpers): the marketplace plugins are built against it |
-| `NeoIDE.Tests/` | test harness: `NeoIDE.Tests.exe <NeoPHP project>` (engine, completion, git, themes, marketplace…) |
+| `NeoIDE.Tests/` | test harness: `NeoIDE.Tests.exe <NeoPHP project>` (engine, completion, git, themes, marketplace, NeoPHP names, php -l, terminal, DBGp with a fake Xdebug…) |
 | `build.ps1` | build / pack / release (see below) |
 
 ```powershell

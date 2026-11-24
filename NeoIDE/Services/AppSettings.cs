@@ -58,6 +58,16 @@ public sealed class AppSettings
     // ---- Plugins (ids)
     public List<string> DisabledPlugins { get; set; } = new();
 
+    // code analysis
+    public bool LintWhileTyping { get; set; } = true;     // php -l on the buffer
+    public bool PhpStanOnSave { get; set; } = true;       // when vendor/phpstan is installed
+    public int PhpStanLevel { get; set; } = 5;            // used when the project has no phpstan.neon
+    public bool NeoChecks { get; set; } = true;           // unknown routes / templates / env variables
+
+    // debugger
+    public int XdebugPort { get; set; } = 9003;
+    public bool BreakAtFirstLine { get; set; }
+
     public static string Directory
     {
         get
@@ -108,6 +118,10 @@ public sealed class ProjectSettings
     public int ServerPort { get; set; } = 8000;
     public List<string> OpenFiles { get; set; } = new();
     public string? ActiveFile { get; set; }
+    public List<BreakpointDef> Breakpoints { get; set; } = new();
+    public List<string> Watches { get; set; } = new();
+    /// <summary>Path of the project on the server (Docker, VM), mapped to the project root; null = same machine.</summary>
+    public string? DebugServerRoot { get; set; }
 
     public static ProjectSettings Load(string projectRoot)
     {
@@ -132,4 +146,13 @@ public sealed class ProjectSettings
         }
         catch { }
     }
+}
+
+/// <summary>A line breakpoint of the project (1-based line), with an optional PHP condition.</summary>
+public sealed class BreakpointDef
+{
+    public string File { get; set; } = "";
+    public int Line { get; set; }
+    public string? Condition { get; set; }
+    public bool Enabled { get; set; } = true;
 }

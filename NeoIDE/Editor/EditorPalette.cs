@@ -122,6 +122,11 @@ public static class EditorPalette
     public static Color Unused => T.Editor.Unused;
     public static Color ErrorUnderline => T.Editor.ErrorUnderline;
     public static Color BracketMatch => T.Editor.BracketMatch;
+    public static Color WarningUnderline => T.IsDark ? C("#D9A343") : C("#D49A1E");
+    public static Color InfoUnderline => T.IsDark ? C("#6F737A") : C("#9AA0A9");
+    public static Color ExecutionLine => T.IsDark ? Color.FromArgb(0x90, 0x2D, 0x5F, 0xA8) : Color.FromArgb(0x90, 0xA8, 0xC8, 0xF7);
+    public static Color BreakpointLine => T.IsDark ? Color.FromArgb(0x40, 0xC7, 0x54, 0x50) : Color.FromArgb(0x40, 0xF2, 0x8B, 0x86);
+    public static Color Breakpoint => C("#E5484D");
     public static Color SearchHighlight => T.Editor.SearchHighlight;
     public static Color Caret => T.Editor.Caret;
     public static Color GutterAdded => T.IsDark ? C("#549159") : C("#B5D9B7");

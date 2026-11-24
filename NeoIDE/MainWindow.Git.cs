@@ -361,6 +361,10 @@ public partial class MainWindow
         ShowBottom(bottom);
     }
 
+    /// <summary>Render checks: the editor of the selected tab, a new terminal.</summary>
+    public Editor.CodeEditor? EditorForPreview => CurrentEditor;
+    public Controls.Terminal.TerminalView ShellForPreview(Controls.Terminal.ShellKind kind) => NewShell(kind);
+
     private void GitClone_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new CloneDialog();

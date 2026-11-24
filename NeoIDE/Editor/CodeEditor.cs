@@ -13,6 +13,8 @@ using ICSharpCode.AvalonEdit.Indentation;
 using ICSharpCode.AvalonEdit.Search;
 using NeoIDE.Php;
 using NeoIDE.Services;
+using NeoIDE.Services.Diagnostics;
+using ICSharpCode.AvalonEdit.Rendering;
 
 namespace NeoIDE.Editor;
 
@@ -62,6 +64,15 @@ public sealed class CodeEditor : TextEditor
         TextArea.Margin = new Thickness(4, 0, 0, 0);
         TextArea.LeftMargins.Add(_changeMargin);
         TextArea.LeftMargins.Add(new Border { Width = 6 });
+        _stripe = new ErrorStripe(TextArea.TextView, () => _squiggles.Markers, GoToOffset);
+        TextArea.TextView.InsertLayer(_stripe, KnownLayer.Caret, LayerInsertionPosition.Above);
+        DiagnosticsStore.Changed += OnDiagnosticsChanged;
+        _breakpointMargin = new BreakpointMargin(this);
+        TextArea.LeftMargins.Insert(TextArea.LeftMargins.IndexOf(_changeMargin), _neoGutter);
+        TextArea.TextView.BackgroundRenderers.Add(new DebugLineRenderer(this));
+        Services.Debug.Breakpoints.Changed += OnBreakpointsChanged;
+        Services.Debug.DebugService.StateChanged += OnDebugStateChanged;
+        Php.NeoProject.Changed += OnNeoProjectChanged;
 
         var search = SearchPanel.Install(this);
         search.MarkerBrush = new SolidColorBrush(EditorPalette.SearchHighlight);
@@ -95,6 +106,147 @@ public sealed class CodeEditor : TextEditor
     {
         ThemeManager.ThemeChanged -= ApplyTheme;
         DisplayManager.Changed -= ApplyDisplay;
+        DiagnosticsStore.Changed -= OnDiagnosticsChanged;
+        Services.Debug.Breakpoints.Changed -= OnBreakpointsChanged;
+        Services.Debug.DebugService.StateChanged -= OnDebugStateChanged;
+        Php.NeoProject.Changed -= OnNeoProjectChanged;
+    }
+
+    // ------------------------------------------------------------------ debugger
+
+    private readonly BreakpointMargin _breakpointMargin;
+
+    public void ToggleBreakpoint(int line)
+    {
+        if (FilePath == null || !IsPhp || IsPreview) return;
+        Services.Debug.Breakpoints.Toggle(FilePath, line);
+    }
+
+    private void OnBreakpointsChanged(string? file)
+    {
+        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => OnBreakpointsChanged(file)); return; }
+        _breakpointMargin.Sync();
+        TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+    }
+
+    private void OnDebugStateChanged()
+    {
+        _breakpointMargin.InvalidateVisual();
+        TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+    }
+
+    private void OnNeoProjectChanged()
+    {
+        // routes / templates / .env changed: recheck the NeoPHP names of the buffer
+        if (!SupportsNeo) return;
+        Dispatcher.BeginInvoke(() => { _analysisTimer.Stop(); _analysisTimer.Start(); });
+    }
+
+    /// <summary>Breakpoints first, then the line numbers (AvalonEdit inserts them at index 0 when they are switched on).</summary>
+    private void ArrangeMargins()
+    {
+        var margins = TextArea.LeftMargins;
+        if (margins.IndexOf(_breakpointMargin) == 0) return;
+        margins.Remove(_breakpointMargin);
+        margins.Insert(0, _breakpointMargin);
+    }
+
+    // ------------------------------------------------------------------ problems (own analysis + php -l, PHPStan, NeoPHP checks)
+
+    private readonly ErrorStripe _stripe;
+    private List<Squiggle> _ideMarkers = new();
+    private int _lintVersion;
+
+    private void OnDiagnosticsChanged(string? file)
+    {
+        if (file != null && (FilePath == null || !string.Equals(file, System.IO.Path.GetFullPath(FilePath), StringComparison.OrdinalIgnoreCase))) return;
+        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => OnDiagnosticsChanged(file)); return; }
+        ComposeMarkers();
+    }
+
+    /// <summary>Problems published by the other sources, converted to ranges of the buffer.</summary>
+    private List<Squiggle> ExternalMarkers()
+    {
+        var list = new List<Squiggle>();
+        if (FilePath == null || IsPreview) return list;
+        foreach (var d in DiagnosticsStore.For(FilePath))
+        {
+            if (d.Source is "ide" or "neophp") continue; // computed on the buffer: already in _ideMarkers
+            int start, length;
+            if (d.Start >= 0 && d.Start <= Document.TextLength) { start = d.Start; length = Math.Min(d.Length, Document.TextLength - d.Start); }
+            else
+            {
+                var line = Document.GetLineByNumber(Math.Clamp(d.Line, 1, Document.LineCount));
+                var text = Document.GetText(line);
+                if (d.Column > 0 && d.Column <= text.Length)
+                {
+                    start = line.Offset + d.Column - 1;
+                    int e = d.Column - 1;
+                    while (e < text.Length && (PhpLexer.IsIdentPart(text[e]) || text[e] is '$' or '\\')) e++;
+                    length = Math.Max(1, e - (d.Column - 1));
+                }
+                else
+                {
+                    var ws = text.Length - text.TrimStart().Length;
+                    start = line.Offset + ws;
+                    length = Math.Max(1, text.TrimEnd().Length - ws);
+                }
+            }
+            var source = d.Source switch { "php" => "PHP", "phpstan" => "PHPStan", "neophp" => "NeoPHP", var s => s };
+            list.Add(new Squiggle(start, length, $"{d.Message}{(d.Code != null ? $"  ({d.Code})" : "")}\n— {source}", d.Severity, d.Source));
+        }
+        return list;
+    }
+
+    /// <summary>The IDE's own problems of the buffer, for the Problems tool window.</summary>
+    private void PublishIdeMarkers(string path)
+    {
+        var doc = Document;
+        DiagnosticsStore.Set(path, "ide", _ideMarkers.Where(m => m.Start >= 0 && m.Start <= doc.TextLength).Select(m =>
+        {
+            var line = doc.GetLineByOffset(m.Start);
+            return new Diagnostic(path, line.LineNumber, m.Start - line.Offset + 1, m.Severity, m.Message.Split('\n')[0], m.Source)
+                { Start = m.Start, Length = m.Length };
+        }).ToList());
+    }
+
+    private void ComposeMarkers()
+    {
+        _squiggles.Markers = _ideMarkers.Concat(ExternalMarkers()).ToList();
+        _stripe.Refresh();
+        TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+        ProblemsChanged?.Invoke();
+    }
+
+    public event Action? ProblemsChanged;
+
+    /// <summary>Problems of the buffer, in document order.</summary>
+    public IReadOnlyList<Squiggle> Problems => _squiggles.Markers.OrderBy(m => m.Start).ToList();
+
+    /// <summary>F2 / Shift+F2: next / previous problem of the file (errors first, like PhpStorm).</summary>
+    public void GoToProblem(int dir)
+    {
+        var all = Problems.Where(m => m.Severity != Severity.Info).ToList();
+        if (all.Count == 0) { StatusMessage?.Invoke("No problems in this file"); return; }
+        var pool = all.Any(m => m.Severity == Severity.Error) ? all.Where(m => m.Severity == Severity.Error).ToList() : all;
+        var caret = CaretOffset;
+        var target = dir > 0 ? pool.FirstOrDefault(m => m.Start > caret) ?? pool[0] : pool.LastOrDefault(m => m.Start < caret) ?? pool[^1];
+        GoToOffset(target.Start);
+        StatusMessage?.Invoke(target.Message.Split('\n')[0]);
+    }
+
+    private async void LintBuffer(string path, string text)
+    {
+        var version = ++_lintVersion;
+        await Task.Delay(400);
+        if (version != _lintVersion) return;
+        try
+        {
+            var list = await Checkers.LintAsync(path, text);
+            if (version != _lintVersion) return;
+            DiagnosticsStore.Set(path, "php", list);
+        }
+        catch { }
     }
 
     /// <summary>Editor part of the Appearance &amp; display settings.</summary>
@@ -111,6 +263,7 @@ public sealed class CodeEditor : TextEditor
         Options.HighlightCurrentLine = s.EditorHighlightCurrentLine;
         foreach (var margin in TextArea.LeftMargins.OfType<FoldingMargin>())
             margin.Visibility = s.EditorShowFolding ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        if (_breakpointMargin != null) ArrangeMargins();
     }
 
     public void Load(string path, string text)
@@ -129,6 +282,7 @@ public sealed class CodeEditor : TextEditor
         _foldingManager = FoldingManager.Install(TextArea);
         StyleFoldingMargin();
         ApplyDisplay();
+        _breakpointMargin.Sync();
         UpdateFoldings();
         Analyze();
     }
@@ -198,7 +352,8 @@ public sealed class CodeEditor : TextEditor
     private List<MissingMethods> _missing = new();
 
     private sealed record AnalysisResult(object? Marks, List<PhpUse>? Unused, List<(int, int)>? Dim,
-        List<(int start, int length, string name, List<PhpClass> candidates)>? Unresolved, List<MissingMethods>? Missing);
+        List<(int start, int length, string name, List<PhpClass> candidates)>? Unresolved, List<MissingMethods>? Missing,
+        List<Squiggle>? Neo = null);
 
     /// <summary>
     /// Background analysis (parse, imports, unknown classes, missing methods, VCS markers):
@@ -212,13 +367,16 @@ public sealed class CodeEditor : TextEditor
         var baseText = IsPreview ? null : _changeMargin.BaseText;
         var php = IsPhp && !IsPreview;
         var path = FilePath;
+        var language = Language;
+        var neoChecks = !IsPreview && path != null && Language is "PHP" or "Twig" or "YAML";
         AnalysisResult result;
         try
         {
             result = await Task.Run(() =>
             {
                 var marks = baseText != null ? ChangeMarkerMargin.Prepare(baseText, text) : null;
-                if (!php) return new AnalysisResult(marks, null, null, null, null);
+                var neo = neoChecks ? NeoInsight.Check(text, language) : null;
+                if (!php) return new AnalysisResult(marks, null, null, null, null, neo);
                 var info = PhpParser.Parse(text, path);
                 if (path != null && Workspace.Root != null) Workspace.Index.UpdateFromBuffer(info, path);
                 var unused = ImportManager.FindUnused(text, info);
@@ -229,25 +387,36 @@ public sealed class CodeEditor : TextEditor
                     if (items.All(unused.Contains)) dim.Add((items[0].StatementStart, items[0].StatementEnd));
                 }
                 var insight = Workspace.Insight;
-                return new AnalysisResult(marks, unused, dim, insight.FindUnresolvedClasses(text, info), insight.FindMissingImplementations(info));
+                return new AnalysisResult(marks, unused, dim, insight.FindUnresolvedClasses(text, info), insight.FindMissingImplementations(info), neo);
             });
         }
         catch { return; }
         if (version != _analysisVersion) return; // the text changed meanwhile: a newer analysis is coming
 
         _changeMargin.Apply(result.Marks);
-        if (!php) return;
+        _neoGutter.Update(this);
+        if (!php)
+        {
+            if (!neoChecks) return;
+            _ideMarkers = result.Neo ?? new List<Squiggle>();
+            PublishIdeMarkers(path!);
+            ComposeMarkers();
+            return;
+        }
         _unusedUses = result.Unused!;
         _dim.Segments = result.Dim!;
         _unresolved = result.Unresolved!;
         _missing = result.Missing!;
-        var markers = _unresolved.Select(u => (u.start, u.length, u.candidates.Count > 0
-            ? $"Undefined class '{u.name}' — Alt+Enter to import" : $"Undefined class '{u.name}'")).ToList();
+        var markers = _unresolved.Select(u => new Squiggle(u.start, u.length, u.candidates.Count > 0
+            ? $"Undefined class '{u.name}' — Alt+Enter to import" : $"Undefined class '{u.name}'", Severity.Error)).ToList();
         foreach (var m in _missing)
-            markers.Add((m.NameOffset, m.NameLength,
-                $"Class '{m.ClassName}' must implement {m.Methods.Count} method(s): {string.Join(", ", m.Methods.Take(6).Select(x => $"{x.Name}() of {x.DeclaringClass.Split('\\').Last()}"))}{(m.Methods.Count > 6 ? "…" : "")} — Alt+Enter / Ctrl+I to add them"));
-        _squiggles.Markers = markers;
-        TextArea.TextView.Redraw();
+            markers.Add(new Squiggle(m.NameOffset, m.NameLength,
+                $"Class '{m.ClassName}' must implement {m.Methods.Count} method(s): {string.Join(", ", m.Methods.Take(6).Select(x => $"{x.Name}() of {x.DeclaringClass.Split('\\').Last()}"))}{(m.Methods.Count > 6 ? "…" : "")} — Alt+Enter / Ctrl+I to add them", Severity.Error));
+        markers.AddRange(result.Neo ?? new List<Squiggle>());
+        _ideMarkers = markers;
+        if (path != null) PublishIdeMarkers(path);
+        ComposeMarkers();
+        if (path != null && AppSettings.Current.LintWhileTyping && Workspace.PhpExe != null) LintBuffer(path, text);
     }
 
     private void UpdateBrackets()
@@ -330,6 +499,13 @@ public sealed class CodeEditor : TextEditor
         }
         if (c == '}') Reindent(Document.GetLineByOffset(caret));
 
+        // NeoPHP names: route, template, .env variable, parameter, service
+        if (_completion == null && SupportsNeo && (c is '\'' or '"' or '(' or '%' or '@' || PhpLexer.IsIdentPart(c)) && NeoRefAt(CaretOffset) != null)
+        {
+            ShowCompletion(false);
+            return;
+        }
+
         // CSS (files, <style> blocks, style="" attributes): first letter of a word, ':', '@', '!', '.', '--'
         if (_completion == null && (Language == "CSS" || Language is "HTML" or "Twig" or "PHP" && CssRegion(Text, caret) != null))
         {
@@ -389,6 +565,8 @@ public sealed class CodeEditor : TextEditor
         if (key == Key.O && mods == (ModifierKeys.Control | ModifierKeys.Alt)) { OptimizeImports(); e.Handled = true; return; }
         if (key is Key.Up or Key.Down && mods == (ModifierKeys.Control | ModifierKeys.Shift)) { MoveLine(key == Key.Up ? -1 : 1); e.Handled = true; return; }
         if (key == Key.Escape && _completion == null) { _hoverTip.IsOpen = false; }
+        if (key == Key.F2 && mods is ModifierKeys.None or ModifierKeys.Shift) { GoToProblem(mods == ModifierKeys.Shift ? -1 : 1); e.Handled = true; return; }
+        if (key == Key.F8 && mods == ModifierKeys.Control) { ToggleBreakpoint(Document.GetLineByOffset(CaretOffset).LineNumber); e.Handled = true; return; }
 
         if (key == Key.Back && mods == ModifierKeys.None && TextArea.Selection.IsEmpty)
         {
@@ -490,7 +668,14 @@ public sealed class CodeEditor : TextEditor
         int start;
 
         var css = CssRegion(text, caret);
-        if (css != null)
+        var neo = NeoCompletionAt(caret);
+        _neoCompletion = neo != null;
+        if (neo != null)
+        {
+            start = neo.Value.start;
+            entries = neo.Value.entries;
+        }
+        else if (css != null)
         {
             var r = CssCompletion.Complete(css.Value.css, caret - css.Value.start, css.Value.start, css.Value.declarations, Workspace.Root);
             start = r.ReplaceStart;
@@ -588,7 +773,7 @@ public sealed class CodeEditor : TextEditor
             var caret = CaretOffset;
             if (caret < w.StartOffset) { w.Close(); return; }
             var typed = Document.GetText(w.StartOffset, caret - w.StartOffset);
-            if (typed.Any(ch => !(PhpLexer.IsIdentPart(ch) || ch is '$' or '\\'))) { w.Close(); return; }
+            if (typed.Any(ch => !(PhpLexer.IsIdentPart(ch) || ch is '$' or '\\' || _neoCompletion && ch is '/' or '.' or '-' or '@' or ':'))) { w.Close(); return; }
             var visible = Filter(_allEntries, typed);
             // nothing left, or the only proposal is exactly what was typed: close
             if (visible.Count == 0 || visible.Count == 1 && visible[0].Label == typed) { w.Close(); return; }
@@ -791,9 +976,35 @@ public sealed class CodeEditor : TextEditor
 
     // ------------------------------------------------------------------ navigation & hover
 
+    // ------------------------------------------------------------------ NeoPHP names in strings
+
+    private bool _neoCompletion;
+    private readonly NeoGutterMargin _neoGutter = new();
+
+    private bool SupportsNeo => !IsPreview && Language is "PHP" or "Twig" or "YAML";
+
+    /// <summary>NeoPHP reference at the offset (searched in its line only: cheap enough for every keystroke).</summary>
+    public NeoRef? NeoRefAt(int offset)
+    {
+        if (!SupportsNeo || offset < 0 || offset > Document.TextLength) return null;
+        var line = Document.GetLineByOffset(offset);
+        var r = NeoInsight.At(Document.GetText(line), offset - line.Offset, Language);
+        return r == null ? null : r with { Start = r.Start + line.Offset };
+    }
+
+    private (int start, List<CompletionEntry> entries)? NeoCompletionAt(int caret)
+    {
+        if (!SupportsNeo) return null;
+        var line = Document.GetLineByOffset(caret);
+        var r = NeoInsight.Complete(Document.GetText(line), caret - line.Offset, Language);
+        return r == null ? null : (r.Value.start + line.Offset, r.Value.entries);
+    }
+
+    private string? NeoHover(int offset) => NeoRefAt(offset) is { } r ? NeoInsight.Describe(r) : null;
+
     private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (Keyboard.Modifiers != ModifierKeys.Control || !IsPhp) return;
+        if (Keyboard.Modifiers != ModifierKeys.Control || !(IsPhp || SupportsNeo)) return;
         var pos = GetPositionFromPoint(e.GetPosition(this));
         if (pos == null) return;
         var offset = Document.GetOffset(pos.Value.Location);
@@ -859,10 +1070,23 @@ public sealed class CodeEditor : TextEditor
 
     private void UpdateLink(Point mouse)
     {
-        if (!IsPhp || IsPreview || (Keyboard.Modifiers & ModifierKeys.Control) == 0) { ClearLink(); return; }
+        if (!(IsPhp || SupportsNeo) || IsPreview || (Keyboard.Modifiers & ModifierKeys.Control) == 0) { ClearLink(); return; }
         var pos = GetPositionFromPoint(mouse);
         if (pos == null) { ClearLink(); return; }
         var offset = Document.GetOffset(pos.Value.Location);
+        if (NeoRefAt(offset) is { } neo)
+        {
+            if ((neo.Start, neo.Start + neo.Length) == _linkWord) return;
+            _linkWord = (neo.Start, neo.Start + neo.Length);
+            var ok = NeoInsight.Resolve(neo) != null;
+            _link.Start = ok ? neo.Start : -1;
+            _link.Length = neo.Length;
+            _link.Brush = ThemeManager.Brush("LinkFg");
+            Cursor = TextArea.Cursor = ok ? Cursors.Hand : null;
+            TextArea.TextView.Redraw();
+            return;
+        }
+        if (!IsPhp) { ClearLink(); return; }
         int s = offset, e = offset;
         while (s > 0 && (PhpLexer.IsIdentPart(Document.GetCharAt(s - 1)) || Document.GetCharAt(s - 1) == '\\')) s--;
         while (e < Document.TextLength && (PhpLexer.IsIdentPart(Document.GetCharAt(e)) || Document.GetCharAt(e) == '\\')) e++;
@@ -900,6 +1124,12 @@ public sealed class CodeEditor : TextEditor
 
     public bool GoToDeclaration(int offset)
     {
+        if (NeoRefAt(offset) is { } neo)
+        {
+            if (NeoInsight.Resolve(neo) is { } t) NavigateRequested?.Invoke(t.File, t.Offset);
+            else StatusMessage?.Invoke(NeoInsight.Problem(neo with { Checked = true }) ?? $"Cannot find '{neo.Value}'");
+            return true;
+        }
         if (!IsPhp) return false;
         SymbolTarget? target;
         try { target = Workspace.Insight.Resolve(Text, offset, FilePath); } catch { return false; }
@@ -915,14 +1145,18 @@ public sealed class CodeEditor : TextEditor
         if (pos == null) return;
         var offset = Document.GetOffset(pos.Value.Location);
 
-        var marker = _squiggles.Markers.FirstOrDefault(m => offset >= m.start && offset <= m.start + m.length);
-        string? text = marker.message;
+        var hits = _squiggles.Markers.Where(m => offset >= m.Start && offset <= m.Start + m.Length).OrderBy(m => m.Severity).ToList();
+        string? text = hits.Count > 0 ? string.Join("\n\n", hits.Select(m => m.Message).Distinct()) : null;
+        if (text == null)
+        {
+            try { text = NeoHover(offset); } catch { }
+        }
         if (text == null && IsPhp)
         {
             try { text = Workspace.Insight.Resolve(Text, offset, FilePath)?.Description; } catch { }
         }
         if (string.IsNullOrWhiteSpace(text)) return;
-        _hoverTip.Child = DocPopup.Build(text, marker.message != null);
+        _hoverTip.Child = DocPopup.Build(text, hits.Count > 0);
         var p = e.GetPosition(this);
         _hoverTip.PlacementTarget = this;
         _hoverTip.HorizontalOffset = p.X - 8;
