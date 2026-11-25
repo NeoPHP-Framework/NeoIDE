@@ -182,7 +182,7 @@ public partial class MainWindow
         var menu = new ContextMenu { PlacementTarget = target, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
         MenuItem Item(string header, Action action, string gesture = "")
         {
-            var mi = new MenuItem { Header = header, InputGestureText = gesture };
+            var mi = new MenuItem { Header = header.Literal(), InputGestureText = gesture };
             mi.Click += (_, _) => action();
             return mi;
         }
@@ -205,7 +205,7 @@ public partial class MainWindow
         menu.Items.Add(local);
         foreach (var b in branches.Where(b => !b.IsRemote))
         {
-            var mi = new MenuItem { Header = b.Name, IsChecked = b.IsCurrent, InputGestureText = b.Upstream ?? "" };
+            var mi = new MenuItem { Header = b.Name.Literal(), IsChecked = b.IsCurrent, InputGestureText = b.Upstream ?? "" };
             if (!b.IsCurrent)
             {
                 var name = b.Name;
@@ -229,7 +229,7 @@ public partial class MainWindow
             {
                 var name = b.Name;
                 var localName = name.Contains('/') ? name[(name.IndexOf('/') + 1)..] : name;
-                var mi = new MenuItem { Header = name };
+                var mi = new MenuItem { Header = name.Literal() };
                 mi.Items.Add(Item($"Checkout as '{localName}'", () =>
                 {
                     var exists = branches.Any(x => !x.IsRemote && x.Name == localName);

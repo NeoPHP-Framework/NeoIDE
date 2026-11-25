@@ -192,7 +192,7 @@ public sealed class CommitPanel : DockPanel
         dock.Children.Add(name);
         dock.ToolTip = $"{c.Path}  ({c.Kind}{(c.IsStaged ? ", staged" : "")})";
         var menu = new ContextMenu();
-        void Item(string header, Action a) { var mi = new MenuItem { Header = header }; mi.Click += (_, _) => a(); menu.Items.Add(mi); }
+        void Item(string header, Action a) { var mi = new MenuItem { Header = header.Literal() }; mi.Click += (_, _) => a(); menu.Items.Add(mi); }
         Item("Show Diff", () => DiffRequested?.Invoke(c));
         Item("Jump to Source", () => OpenRequested?.Invoke(c.FullPath));
         Item("Rollback…", () => RollbackRequested?.Invoke(new List<GitChange> { c }));

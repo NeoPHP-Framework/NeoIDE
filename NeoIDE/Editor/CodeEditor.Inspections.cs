@@ -94,12 +94,12 @@ public sealed partial class CodeEditor
         if (hit.method == null || !_usageLens.Usages.TryGetValue(hit.method, out var usages)) return;
         e.Handled = true;
         var menu = new ContextMenu { PlacementTarget = TextArea.TextView, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
-        if (usages.Count == 0) menu.Items.Add(new MenuItem { Header = $"{hit.method}() is not used in the project", IsEnabled = false });
+        if (usages.Count == 0) menu.Items.Add(new MenuItem { Header = $"{hit.method}() is not used in the project".Literal(), IsEnabled = false });
         foreach (var u in usages.Take(40))
         {
             var rel = Workspace.Root != null ? Path.GetRelativePath(Workspace.Root, u.File).Replace('\\', '/') : u.File;
             var preview = u.Preview.Length > 70 ? u.Preview[..70] + "…" : u.Preview;
-            var mi = new MenuItem { Header = $"{rel}:{u.Line}   {preview}" };
+            var mi = new MenuItem { Header = $"{rel}:{u.Line}   {preview}".Literal() };
             var usage = u;
             mi.Click += (_, _) => NavigateRequested?.Invoke(usage.File, usage.Offset);
             menu.Items.Add(mi);

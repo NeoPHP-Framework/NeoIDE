@@ -31,7 +31,7 @@ public sealed partial class CodeEditor
     {
         foreach (var (header, action) in Enumerable.Reverse(TemplateQuickFixes(caret)))
         {
-            var mi = new MenuItem { Header = header };
+            var mi = new MenuItem { Header = header.Literal() };
             mi.Click += (_, _) => action();
             menu.Items.Insert(0, mi);
         }

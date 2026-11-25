@@ -119,7 +119,7 @@ public sealed class BreakpointMargin : AbstractMargin
         var menu = new ContextMenu { PlacementTarget = this, Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
         void Add(string header, Action a, string? gesture = null)
         {
-            var mi = new MenuItem { Header = header, InputGestureText = gesture ?? "" };
+            var mi = new MenuItem { Header = header.Literal(), InputGestureText = gesture ?? "" };
             mi.Click += (_, _) => a();
             menu.Items.Add(mi);
         }

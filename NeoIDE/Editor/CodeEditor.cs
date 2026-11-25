@@ -925,19 +925,19 @@ public sealed partial class CodeEditor : TextEditor
             foreach (var cand in u.candidates.OrderBy(c => c.File?.Contains("\\vendor\\") == true ? 1 : 0).ThenBy(c => c.Fqn))
             {
                 var fqn = cand.Fqn;
-                var item = new MenuItem { Header = $"Import class '{fqn}'" };
+                var item = new MenuItem { Header = $"Import class '{fqn}'".Literal() };
                 item.Click += (_, _) => ImportClass(fqn);
                 menu.Items.Add(item);
             }
             if (u.candidates.Count == 0)
-                menu.Items.Add(new MenuItem { Header = $"Class '{u.name}' not found in the project", IsEnabled = false });
+                menu.Items.Add(new MenuItem { Header = $"Class '{u.name}' not found in the project".Literal(), IsEnabled = false });
         }
         var miss = _missing.FirstOrDefault(m => caret >= m.NameOffset && caret <= m.NameOffset + m.NameLength)
                    ?? (_missing.Count == 1 && menu.Items.Count == 0 ? _missing[0] : null);
         if (miss != null)
         {
             var names = string.Join(", ", miss.Methods.Take(4).Select(m => $"{m.Name}() from {m.DeclaringClass.Split('\\').Last()}")) + (miss.Methods.Count > 4 ? "…" : "");
-            var impl = new MenuItem { Header = $"Implement methods: {names}", InputGestureText = "Ctrl+I" };
+            var impl = new MenuItem { Header = $"Implement methods: {names}".Literal(), InputGestureText = "Ctrl+I" };
             impl.Click += (_, _) => ImplementMethods(miss);
             menu.Items.Insert(0, impl);
         }

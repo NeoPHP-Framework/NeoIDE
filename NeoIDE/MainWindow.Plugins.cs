@@ -166,7 +166,7 @@ public partial class MainWindow
             _pluginMenuSeparator = new Separator();
             ToolsMenu.Items.Insert(0, _pluginMenuSeparator);
         }
-        var mi = new MenuItem { Header = item.Header };
+        var mi = new MenuItem { Header = item.Header.Literal() };
         if (item.Icon != null) mi.Icon = new TextBlock { Text = item.Icon, FontFamily = (FontFamily)FindResource("Icons"), FontSize = 13 };
         mi.Click += (_, _) =>
         {

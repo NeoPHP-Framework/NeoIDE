@@ -179,7 +179,7 @@ public partial class MainWindow : Window, IIdeShell
         RecentMenu.Items.Clear();
         foreach (var r in AppSettings.Current.RecentProjects.Where(r => Directory.Exists(r.Path)).Take(15))
         {
-            var item = new MenuItem { Header = $"{r.Name}   ({r.Path})" };
+            var item = new MenuItem { Header = $"{r.Name}   ({r.Path})".Literal() };
             var p = r.Path;
             item.Click += (_, _) => SwitchProject(p);
             RecentMenu.Items.Add(item);
@@ -926,7 +926,7 @@ public partial class MainWindow : Window, IIdeShell
 
         foreach (var (name, desc) in _neoCommands.Where(c => c.name.StartsWith("make:")))
         {
-            var item = new MenuItem { Header = name[5..], ToolTip = desc };
+            var item = new MenuItem { Header = name[5..].Literal(), ToolTip = desc };
             var n = name;
             item.Click += (_, _) => RunMake(n, desc);
             MakeMenu.Items.Add(item);
@@ -936,13 +936,13 @@ public partial class MainWindow : Window, IIdeShell
             ItemsControl parent = CommandsMenu;
             if (group.Key.Length > 0)
             {
-                var sub = new MenuItem { Header = group.Key };
+                var sub = new MenuItem { Header = group.Key.Literal() };
                 CommandsMenu.Items.Add(sub);
                 parent = sub;
             }
             foreach (var (name, desc) in group)
             {
-                var item = new MenuItem { Header = name, ToolTip = desc };
+                var item = new MenuItem { Header = name.Literal(), ToolTip = desc };
                 var n = name;
                 item.Click += (_, _) => RunNeo(n);
                 parent.Items.Add(item);
@@ -1723,7 +1723,7 @@ public partial class MainWindow : Window, IIdeShell
         ThemeMenu.Items.Clear();
         foreach (var t in Editor.ThemeCatalog.All)
         {
-            var item = new MenuItem { Header = t.Name, IsCheckable = true, IsChecked = t.Name == ThemeManager.CurrentName, InputGestureText = t.IsDark ? "dark" : "light" };
+            var item = new MenuItem { Header = t.Name.Literal(), IsCheckable = true, IsChecked = t.Name == ThemeManager.CurrentName, InputGestureText = t.IsDark ? "dark" : "light" };
             var name = t.Name;
             item.Click += (_, _) => ThemeManager.Apply(name);
             ThemeMenu.Items.Add(item);
@@ -1767,7 +1767,7 @@ public partial class MainWindow : Window, IIdeShell
         menu.Items.Add(new Separator());
         foreach (var r in AppSettings.Current.RecentProjects.Where(r => Directory.Exists(r.Path)).Take(12))
         {
-            var item = new MenuItem { Header = r.Name, InputGestureText = r.Path, IsChecked = string.Equals(r.Path, Workspace.Root, StringComparison.OrdinalIgnoreCase) };
+            var item = new MenuItem { Header = r.Name.Literal(), InputGestureText = r.Path, IsChecked = string.Equals(r.Path, Workspace.Root, StringComparison.OrdinalIgnoreCase) };
             var p = r.Path;
             item.Click += (_, _) => SwitchProject(p);
             menu.Items.Add(item);

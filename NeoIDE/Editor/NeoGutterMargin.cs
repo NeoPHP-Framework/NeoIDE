@@ -142,11 +142,11 @@ public sealed class NeoGutterMargin : AbstractMargin
         var hasParams = r.Path.Contains('{');
         void Add(string header, Action a, bool enabled = true)
         {
-            var mi = new MenuItem { Header = header, IsEnabled = enabled };
+            var mi = new MenuItem { Header = header.Literal(), IsEnabled = enabled };
             mi.Click += (_, _) => a();
             menu.Items.Add(mi);
         }
-        menu.Items.Add(new MenuItem { Header = $"{r.Methods} {r.Path}", IsEnabled = false, FontWeight = FontWeights.SemiBold });
+        menu.Items.Add(new MenuItem { Header = $"{r.Methods} {r.Path}".Literal(), IsEnabled = false, FontWeight = FontWeights.SemiBold });
         Add(hasParams ? "Open in browser (fill the {parameters} first)" : "Open in browser", () =>
         {
             var target = url;
@@ -195,7 +195,7 @@ public sealed class NeoGutterMargin : AbstractMargin
         if (hits.Count == 0) menu.Items.Add(new MenuItem { Header = "Not rendered by the controllers of src/", IsEnabled = false });
         foreach (var (file, offset, label) in hits.Take(30))
         {
-            var mi = new MenuItem { Header = label };
+            var mi = new MenuItem { Header = label.Literal() };
             mi.Click += (_, _) => Ide?.Invoke(file, offset);
             menu.Items.Add(mi);
         }
