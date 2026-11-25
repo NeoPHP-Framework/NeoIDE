@@ -136,6 +136,58 @@ public sealed class SettingsDialog : DialogWindow
         return grid;
     }
 
+    /// <summary>"Installed | Marketplace" tabs of the Themes / Plugins pages: underlined labels, one content shown at a time.</summary>
+    private sealed class PageTabs
+    {
+        private readonly List<(Border tab, TextBlock label, FrameworkElement content)> _tabs = new();
+        private readonly StackPanel _strip = new() { Orientation = Orientation.Horizontal };
+        public Border Header { get; }
+        public int Selected { get; private set; }
+
+        public PageTabs()
+        {
+            Header = new Border { Child = _strip, BorderBrush = ThemeManager.Brush("SubtleBorder"), BorderThickness = new Thickness(0, 0, 0, 1), Margin = new Thickness(0, 10, 0, 0) };
+        }
+
+        public void Add(string text, FrameworkElement content)
+        {
+            var label = new TextBlock { Text = text, FontSize = 13 };
+            var tab = new Border
+            {
+                Child = label, Padding = new Thickness(2, 4, 2, 6), Margin = new Thickness(0, 0, 22, -1), Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0, 0, 0, 2), Cursor = System.Windows.Input.Cursors.Hand,
+            };
+            var index = _tabs.Count;
+            tab.MouseLeftButtonUp += (_, _) => Select(index);
+            tab.MouseEnter += (_, _) => { if (Selected != index) label.Foreground = ThemeManager.Brush("Fg"); };
+            tab.MouseLeave += (_, _) => Style(index);
+            _strip.Children.Add(tab);
+            _tabs.Add((tab, label, content));
+            Select(Selected);
+        }
+
+        public void SetText(int index, string text) => _tabs[index].label.Text = text;
+
+        public void Select(int index)
+        {
+            Selected = index;
+            for (int i = 0; i < _tabs.Count; i++)
+            {
+                _tabs[i].content.Visibility = i == index ? Visibility.Visible : Visibility.Collapsed;
+                Style(i);
+            }
+        }
+
+        private void Style(int i)
+        {
+            var (tab, label, _) = _tabs[i];
+            var on = i == Selected;
+            tab.BorderBrush = on ? ThemeManager.Brush("Accent") : Brushes.Transparent;
+            label.Foreground = ThemeManager.Brush(on ? "Fg" : "FgSecondary");
+            label.FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+    }
+
     private static bool Matches(string query, params string?[] fields) =>
         query.Length == 0 || query.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(word => fields.Any(f => f?.Contains(word, StringComparison.OrdinalIgnoreCase) == true));
 
@@ -200,20 +252,26 @@ public sealed class SettingsDialog : DialogWindow
         DockPanel.SetDock(import, Dock.Right);
         head.Children.Add(folder);
         head.Children.Add(import);
-        var title = Section("Installed themes");
+        var title = Section("Themes");
         title.Margin = new Thickness(0);
         head.Children.Add(title);
         p.Children.Add(head);
         p.Children.Add(Hint("A theme colours the whole IDE: interface, editor and syntax. Click to apply (Cancel restores the previous one). Themes are JSON files."));
+        _themeTabs = new PageTabs();
+        p.Children.Add(_themeTabs.Header);
         p.Children.Add(SearchBox("Search themes: name, dark, light…", q => { _themeQuery = q; RefreshThemes(); }));
         _installedThemes = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
         p.Children.Add(_installedThemes);
 
-        p.Children.Add(Section("Marketplace"));
+        var market = new StackPanel();
         _marketStatus = Hint("Loading the themes of the NeoIDE marketplace…");
-        p.Children.Add(_marketStatus);
+        _marketStatus.Margin = new Thickness(0, 10, 0, 0);
+        market.Children.Add(_marketStatus);
         _marketThemes = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
-        p.Children.Add(_marketThemes);
+        market.Children.Add(_marketThemes);
+        p.Children.Add(market);
+        _themeTabs.Add("Installed", _installedThemes);
+        _themeTabs.Add("Marketplace", market);
 
         import.Click += (_, _) =>
         {
@@ -252,8 +310,25 @@ public sealed class SettingsDialog : DialogWindow
         RefreshPlugins();
     }
 
+    private PageTabs? _themeTabs, _pluginTabs;
+
+    /// <summary>Test harness: shows the Marketplace tab of the Themes and Plugins pages.</summary>
+    public void ShowMarketplaceTabsForPreview() { _themeTabs?.Select(1); _pluginTabs?.Select(1); }
+
+    /// <summary>"Installed (3 · 1 update)" / "Marketplace (5)": counts in the tab labels.</summary>
+    private static void TabCounts(PageTabs? tabs, int installed, int updates, int market, bool marketLoaded)
+    {
+        if (tabs == null) return;
+        tabs.SetText(0, $"Installed ({installed}{(updates > 0 ? $" · {updates} update{(updates > 1 ? "s" : "")}" : "")})");
+        tabs.SetText(1, marketLoaded ? $"Marketplace ({market})" : "Marketplace");
+    }
+
     private void RefreshThemes()
     {
+        var installedThemes = Editor.ThemeCatalog.All.ToList();
+        TabCounts(_themeTabs, installedThemes.Count,
+            installedThemes.Count(t => _index?.Themes.Any(m => m.Id == t.Id && Marketplace.IsNewer(m.Version, t.Version)) == true),
+            _index?.Themes.Count(m => Editor.ThemeCatalog.Find(m.Id) == null) ?? 0, _index != null);
         _installedThemes.Children.Clear();
         foreach (var theme in Editor.ThemeCatalog.All.Where(t => Matches(_themeQuery, t.Name, t.Id, t.Description, t.IsDark ? "dark" : "light", t.Author)))
         {
@@ -487,11 +562,13 @@ public sealed class SettingsDialog : DialogWindow
         DockPanel.SetDock(fromDisk, Dock.Right);
         head.Children.Add(folder);
         head.Children.Add(fromDisk);
-        var title = Section("Installed plugins");
+        var title = Section("Plugins");
         title.Margin = new Thickness(0);
         head.Children.Add(title);
         p.Children.Add(head);
         p.Children.Add(Hint("Plugins add tool windows and commands to NeoIDE. They run with your permissions: install only plugins you trust."));
+        _pluginTabs = new PageTabs();
+        p.Children.Add(_pluginTabs.Header);
         p.Children.Add(SearchBox("Search plugins: name, database, http, logs…", q => { _pluginQuery = q; RefreshPlugins(); }));
 
         var restart = new Button { Content = "Restart now", Style = (Style)FindResource("PrimaryButton"), MinWidth = 0, Padding = new Thickness(10, 2, 10, 2) };
@@ -509,11 +586,15 @@ public sealed class SettingsDialog : DialogWindow
 
         _installedPlugins = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
         p.Children.Add(_installedPlugins);
-        p.Children.Add(Section("Marketplace"));
+        var market = new StackPanel();
         _pluginStatus = Hint("Loading the plugins of the NeoIDE marketplace…");
-        p.Children.Add(_pluginStatus);
+        _pluginStatus.Margin = new Thickness(0, 10, 0, 0);
+        market.Children.Add(_pluginStatus);
         _marketPlugins = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-        p.Children.Add(_marketPlugins);
+        market.Children.Add(_marketPlugins);
+        p.Children.Add(market);
+        _pluginTabs.Add("Installed", _installedPlugins);
+        _pluginTabs.Add("Marketplace", market);
 
         fromDisk.Click += (_, _) =>
         {
@@ -543,6 +624,10 @@ public sealed class SettingsDialog : DialogWindow
     private void RefreshPlugins()
     {
         _restartBanner.Visibility = Services.Plugins.PluginManager.RestartRequired ? Visibility.Visible : Visibility.Collapsed;
+        var installedPlugins = Services.Plugins.PluginManager.Installed.ToList();
+        TabCounts(_pluginTabs, installedPlugins.Count,
+            installedPlugins.Count(x => _index?.Plugins.Any(m => m.Id == x.Id && Marketplace.IsNewer(m.Version, x.PendingVersion ?? x.Manifest.Version)) == true),
+            _index?.Plugins.Count(m => Services.Plugins.PluginManager.Find(m.Id) == null) ?? 0, _index != null);
         _installedPlugins.Children.Clear();
         foreach (var plugin in Services.Plugins.PluginManager.Installed.Where(x => Matches(_pluginQuery, x.Manifest.Name, x.Id, x.Manifest.Description)).OrderBy(x => x.Manifest.Name))
         {
@@ -572,7 +657,7 @@ public sealed class SettingsDialog : DialogWindow
             }
             _installedPlugins.Children.Add(PluginRow(m.Icon, m.Name, $"v{m.Version} · {m.Author}", m.Description, state, stateKey, actions));
         }
-        if (_installedPlugins.Children.Count == 0) _installedPlugins.Children.Add(Hint(_pluginQuery.Length > 0 ? "No installed plugin matches the search." : "No plugin installed yet: pick one in the marketplace below."));
+        if (_installedPlugins.Children.Count == 0) _installedPlugins.Children.Add(Hint(_pluginQuery.Length > 0 ? "No installed plugin matches the search." : "No plugin installed yet: pick one in the Marketplace tab."));
 
         _marketPlugins.Children.Clear();
         if (_index == null) return;

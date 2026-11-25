@@ -106,7 +106,14 @@ if (args.Length == 3 && args[0] == "--render")
         {
             ThemeManager.Apply(theme);
             var tn0 = theme.Replace(" ", "").ToLowerInvariant();
-            if (onlyWhat == "settings") { var pg = Environment.GetEnvironmentVariable("NEOIDE_RENDER_PAGE") ?? "Themes"; Snap(new NeoIDE.Dialogs.SettingsDialog(pg), $"settings-{pg.ToLowerInvariant()}-{tn0}", 900, 640); continue; }
+            if (onlyWhat == "settings")
+            {
+                var pg = Environment.GetEnvironmentVariable("NEOIDE_RENDER_PAGE") ?? "Themes";
+                var market = Environment.GetEnvironmentVariable("NEOIDE_RENDER_TAB") == "market";
+                var sd = new NeoIDE.Dialogs.SettingsDialog(pg);
+                Snap(sd, $"settings-{pg.ToLowerInvariant()}{(market ? "-market" : "")}-{tn0}", 900, 640, market ? sd.ShowMarketplaceTabsForPreview : null);
+                continue;
+            }
             if (onlyWhat == "v2")
             {
                 var homeFile = Path.Combine(project, "src", "Controller", "HomeController.php");
