@@ -36,9 +36,9 @@ public sealed class NewClassDialog : DialogWindow
         p.Children.Add(Label("Namespace:"));
         p.Children.Add(_namespace);
         p.Children.Add(Hint("Computed from the PSR-4 autoload section of composer.json."));
-        p.Children.Add(Label("Extends (class or interface name, auto-imported):"));
+        p.Children.Add(Label("Extends (completion while typing or Ctrl+Space, auto-imported):"));
         p.Children.Add(_extends);
-        p.Children.Add(Label("Implements (comma separated):"));
+        p.Children.Add(Label("Implements (interfaces, comma separated):"));
         p.Children.Add(_implements);
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
         _final.Margin = new Thickness(0, 0, 18, 0);
@@ -52,6 +52,14 @@ public sealed class NewClassDialog : DialogWindow
         p.Children.Add(Buttons(ok, Secondary("Cancel")));
         Content = p;
 
+        // completion of the class names (Ctrl+Space shows the whole list): the parent depends on the kind
+        Controls.ClassAutoComplete.Attach(_extends, c => (_kind.SelectedItem as string) switch
+        {
+            "Interface" => c.Kind == PhpClassKind.Interface,
+            "Trait" or "Enum" => false,
+            _ => c.Kind == PhpClassKind.Class && !c.IsFinal,
+        });
+        Controls.ClassAutoComplete.Attach(_implements, c => c.Kind == PhpClassKind.Interface, multiple: true);
         _name.TextChanged += (_, _) => _path.Text = "File: " + Path.Combine(directory, (_name.Text.Trim().Length > 0 ? _name.Text.Trim() : "…") + ".php");
         _kind.SelectionChanged += (_, _) => _final.IsEnabled = _kind.SelectedItem as string is "Class";
         Loaded += (_, _) => { _name.Focus(); _name.SelectAll(); };

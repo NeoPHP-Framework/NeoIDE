@@ -280,6 +280,39 @@ if (args.Length == 3 && args[0] == "--render")
                 }
                 continue;
             }
+            if (onlyWhat == "newclass")
+            {
+                // the dialog with the completion of "extends" open; the popup has its own window: rendered apart
+                Workspace.Open(project);
+                Task.Run(() => Workspace.Index.BuildAsync(project, null)).GetAwaiter().GetResult();
+                var dlg = new NeoIDE.Dialogs.NewClassDialog(Path.Combine(project, "src", "Website", "Exception"), "WebsiteConfigNotFoundException");
+                Snap(dlg, $"newclass-{tn0}", 580, 560, () =>
+                {
+                    var boxes = new List<System.Windows.Controls.TextBox>();
+                    void Walk(System.Windows.DependencyObject d)
+                    {
+                        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(d); i++)
+                        {
+                            var ch = System.Windows.Media.VisualTreeHelper.GetChild(d, i);
+                            if (ch is System.Windows.Controls.TextBox tb) boxes.Add(tb);
+                            Walk(ch);
+                        }
+                    }
+                    dlg.UpdateLayout();
+                    Walk(dlg);
+                    var ext = boxes[2];
+                    ext.Focus();
+                    System.Windows.Input.Keyboard.Focus(ext);
+                    ext.Text = "FrameEx";
+                    ext.CaretIndex = ext.Text.Length;
+                });
+                dlg.Close();
+                var preview = NeoIDE.Controls.ClassAutoComplete.Preview("FrameEx", c => c.Kind == PhpClassKind.Class && !c.IsFinal);
+                var pw = new System.Windows.Window { Content = preview, Background = ThemeManager.Brush("PanelBg") };
+                Snap(pw, $"newclass-popup-{tn0}", 520, 120);
+                pw.Close();
+                continue;
+            }
             if (onlyWhat == "packages")
             {
                 Workspace.Open(project);
@@ -1000,6 +1033,14 @@ try { Directory.Delete(repo, true); } catch { }
         var thisComp = Workspace.Completion.Complete(prelude + list, thisArrow + prelude.Length, listFile, true);
         Check("PHP view completion: $this-> is the Template", thisComp.Entries.Any(e => e.Label.StartsWith("extend")) && thisComp.Entries.Any(e => e.Label.StartsWith("section")), string.Join(",", thisComp.Entries.Take(12).Select(e => e.Label)));
         Check("PHP view: $variable resolves to the render() call", TemplateVariables.PhpViewVariableAt(list, list.IndexOf("$title") + 2, listFile)?.Source == "V3TestController::list()");
+
+        // New PHP Class: completion of extends / implements
+        var parents = NeoIDE.Controls.ClassAutoComplete.Candidates("FrameEx", c => c.Kind == PhpClassKind.Class && !c.IsFinal);
+        Check("New class dialog: parent class completion (camel humps)", parents.FirstOrDefault()?.Fqn.EndsWith("\\FrameworkException") == true, string.Join(", ", parents.Take(5).Select(c => c.Fqn)));
+        var interfaces = NeoIDE.Controls.ClassAutoComplete.Candidates("", c => c.Kind == PhpClassKind.Interface);
+        var qualified = NeoIDE.Controls.ClassAutoComplete.Candidates("App\\Entity\\V3", _ => true);
+        Check("New class dialog: interfaces only for implements, namespace prefix", interfaces.Count > 0 && interfaces.All(c => c.Kind == PhpClassKind.Interface) && qualified.Any(c => c.Fqn == "App\\Entity\\V3Post"),
+            string.Join(", ", qualified.Select(c => c.Fqn)));
 
         var neoRef = NeoInsight.All("<?php $this->redirectToRoute('hom');", "PHP")[0];
         Check("quick fix suggestions for NeoPHP names", NeoInsight.Suggestions(neoRef).FirstOrDefault() == "home", string.Join(",", NeoInsight.Suggestions(neoRef)));
