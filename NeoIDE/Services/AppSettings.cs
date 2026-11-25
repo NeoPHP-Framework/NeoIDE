@@ -62,6 +62,7 @@ public sealed class AppSettings
     public bool LintWhileTyping { get; set; } = true;     // php -l on the buffer
     public bool FormatOnSave { get; set; }               // Reformat Code on Ctrl+S
     public bool ShowUsages { get; set; } = true;          // "3 usages" after the declarations of the methods
+    public List<string>? RemovedTemplates { get; set; }   // default live templates the user deleted ("context|abbreviation")
     public bool PhpStanOnSave { get; set; } = true;       // when vendor/phpstan is installed
     public int PhpStanLevel { get; set; } = 5;            // used when the project has no phpstan.neon
     public bool NeoChecks { get; set; } = true;           // unknown routes / templates / env variables

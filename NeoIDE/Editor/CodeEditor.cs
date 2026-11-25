@@ -601,7 +601,10 @@ public sealed partial class CodeEditor : TextEditor
         if (key == Key.L && mods == (ModifierKeys.Control | ModifierKeys.Alt)) { _ = ReformatAsync(); e.Handled = true; return; }
         if (key is Key.Up or Key.Down && mods == (ModifierKeys.Control | ModifierKeys.Shift)) { MoveLine(key == Key.Up ? -1 : 1); e.Handled = true; return; }
         if (key == Key.Escape && _completion == null) { _hoverTip.IsOpen = false; }
-        if (key == Key.Tab && mods == ModifierKeys.None && _completion == null && TextArea.Selection.IsEmpty && SupportsHtml && TryExpandAbbreviation()) { e.Handled = true; return; }
+        // Tab: a live template, else an Emmet abbreviation (not while the fields of a template are being filled)
+        if (key == Key.Tab && mods == ModifierKeys.None && _completion == null && TextArea.Selection.IsEmpty && TextArea.ActiveInputHandler == TextArea.DefaultInputHandler
+            && (TryExpandLiveTemplate() || SupportsHtml && TryExpandAbbreviation())) { e.Handled = true; return; }
+        if (key == Key.J && mods == ModifierKeys.Control) { ShowLiveTemplates(); e.Handled = true; return; }
         if (key == Key.F2 && mods is ModifierKeys.None or ModifierKeys.Shift) { GoToProblem(mods == ModifierKeys.Shift ? -1 : 1); e.Handled = true; return; }
         if (key == Key.F8 && mods == ModifierKeys.Control) { ToggleBreakpoint(Document.GetLineByOffset(CaretOffset).LineNumber); e.Handled = true; return; }
 
@@ -695,7 +698,14 @@ public sealed partial class CodeEditor : TextEditor
 
     // ------------------------------------------------------------------ completion
 
+    /// <summary>Completion at the caret; an error of a provider never takes the editor down (status bar message).</summary>
     public void ShowCompletion(bool explicitInvoke)
+    {
+        try { ShowCompletionCore(explicitInvoke); }
+        catch (Exception ex) { StatusMessage?.Invoke("Completion error: " + ex.Message); }
+    }
+
+    private void ShowCompletionCore(bool explicitInvoke)
     {
         if (_completion != null && !explicitInvoke) return;
         _completion?.Close();

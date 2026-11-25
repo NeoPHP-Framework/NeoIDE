@@ -359,6 +359,30 @@ if (args.Length == 3 && args[0] == "--render")
                         Type("</");
                         Ok("</ closes the innermost open element", ed.Text.Contains("<p class=\"lead\">Hi <strong>x</strong></p>"), ed.Text);
                         Ok("p.test + Tab", Emmet.Expand("p.test")?.Replace(Emmet.Caret.ToString(), "") == "<p class=\"test\"></p>");
+                        // live templates in the same Twig file: "for" + Tab, the first field selected
+                        ed.CaretOffset = ed.Text.IndexOf("{% endblock");
+                        ed.Document.Insert(ed.CaretOffset, "    \n");
+                        ed.CaretOffset -= 1;
+                        Type("for");
+                        var lt = ed.TryExpandLiveTemplate();
+                        Type("post");
+                        ed.TextArea.Caret.Offset = ed.TextArea.Caret.Offset; // keep the snippet mode
+                        Ok("live template 'for' + Tab in Twig: the fields, indented", lt && ed.Text.Contains("    {% for post in items %}\n        \n    {% endfor %}"), ed.Text);
+                        // PHP: one field used three times is typed once
+                        var phpEd = new CodeEditor();
+                        phpEd.Load(Path.Combine(project, "src", "X.php"), "<?php\nfunction f() {\n    fori\n}\n");
+                        phpEd.CaretOffset = phpEd.Text.IndexOf("fori") + 4;
+                        var fori = phpEd.TryExpandLiveTemplate();
+                        phpEd.TextArea.PerformTextInput("j");
+                        Ok("live template with a field used three times (PHP fori)", fori && phpEd.Text.Contains("for ($j = 0; $j < count; $j++) {"), phpEd.Text);
+                        var str = new CodeEditor();
+                        str.Load(Path.Combine(project, "src", "X.php"), "<?php\n$a = 'fore';\n");
+                        str.CaretOffset = str.Text.IndexOf("fore'") + 4;
+                        Ok("no live template in a PHP string", !str.TryExpandLiveTemplate());
+                        var view = new CodeEditor();
+                        view.Load(Path.Combine(project, "templates", "home", "index.php"), "<ul>\n    for\n</ul>\n");
+                        view.CaretOffset = view.Text.IndexOf("for") + 3;
+                        Ok("live template of a NeoPHP view (HTML of a .php file)", view.TryExpandLiveTemplate() && view.Text.Contains("    <?php foreach ($items as $item): ?>\n        \n    <?php endforeach ?>"), view.Text);
                         var noExpand = new CodeEditor();
                         noExpand.Load(page, "{{ div }}");
                         noExpand.CaretOffset = 6;
@@ -1049,6 +1073,19 @@ try { Directory.Delete(repo, true); } catch { }
     var json = CodeFormatter.FormatJson("{\"a\":[1,2],\"b\":{\"c\":\"/x é\"}}", 4);
     Check("reformat JSON (order, unescaped / and accents)", json == "{\n    \"a\": [\n        1,\n        2\n    ],\n    \"b\": {\n        \"c\": \"/x é\"\n    }\n}\n", json ?? "null");
     Check("reformat JSON: invalid JSON is left alone", CodeFormatter.FormatJson("{\"a\":", 4) == null);
+
+    // live templates: defaults, body syntax, contexts
+    var defaults = LiveTemplates.Defaults();
+    Check("live templates: defaults are unique per context", defaults.GroupBy(t => t.Context + "|" + t.Abbreviation).All(g => g.Count() == 1),
+        string.Join(", ", defaults.GroupBy(t => t.Context + "|" + t.Abbreviation).Where(g => g.Count() > 1).Select(g => g.Key)));
+    string Pv(string context, string abbr) => LiveTemplates.Preview(defaults.First(t => t.Context == context && t.Abbreviation == abbr).Body);
+    Check("live templates: Twig for / block / ext", Pv("Twig", "for") == "{% for item in items %}\n    \n{% endfor %}" && Pv("Twig", "ext").StartsWith("{% extends 'base.html.twig' %}"),
+        Pv("Twig", "for"));
+    Check("live templates: $$ is a $ (PHP foreach, NeoPHP view)", Pv("PHP", "fore") == "foreach ($items as $item) {\n    \n}" && Pv("PHP view", "e") == "<?= $this->e() ?>",
+        Pv("PHP", "fore") + " | " + Pv("PHP view", "e"));
+    var parts = LiveTemplates.Parse("a $x$ b $y:def$ $x$ $END$", "  ", "    ", "\n");
+    Check("live templates: fields, defaults, end", parts.Count(p => p is TemplateField) == 3 && parts.OfType<TemplateField>().ElementAt(1).Default == "def" && parts.Last() is TemplateEnd);
+    Check("live templates: lines keep the indentation", LiveTemplates.Parse("a\n\tb", "    ", "  ", "\n").OfType<TemplateText>().Single().Text == "a\n      b");
 
     // Emmet abbreviations + HTML completion
     string E(string abbr) => Emmet.Expand(abbr) is { } x ? x.Replace(Emmet.Caret, '|') : "null";

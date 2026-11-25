@@ -25,6 +25,9 @@ The IDE of the [NeoPHP](https://github.com/NeoPHP-Framework) framework — a Php
   call stack, variables, watches, evaluate, set value, Docker path mapping (Debug tool window, Alt+5)
 - **HTML** (HTML, Twig, PHP views): Emmet abbreviations with Tab (`h1`, `p.test`, `ul>li.item$*3`, `a[href=#]{Home}`, `!`),
   tag / attribute / value completion, end tag added on `>`, `</` closes the open element
+- **Live templates** (Settings › Live Templates, editable, defaults included): abbreviation + Tab with fields (Tab: next
+  field) — Twig (`if`, `for`, `block`, `ext`, `inc`, `path`…), NeoPHP views (`ext`, `sec`, `for`, `e`…), PHP (`fore`, `pubf`,
+  `action`, `render`, `dd`…); Ctrl+J lists the templates of the place
 - **Syntax highlighting** for PHP, Twig, HTML, CSS, JS/TS, YAML, JSON, Markdown, SQL, XML, .env… + CSS completion and colour picker
 - **Git**: changes, partial commits, log, branches, diff
 - **Terminal**: real terminals (ConPTY) — PowerShell, PowerShell 7, Cmd, Git Bash, WSL — with colours, history, full-screen

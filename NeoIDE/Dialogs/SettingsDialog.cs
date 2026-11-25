@@ -12,7 +12,7 @@ namespace NeoIDE.Dialogs;
 /// Settings (Ctrl+Alt+S): Appearance &amp; display, Editor, PHP, New projects.
 /// Appearance and editor changes are applied live; Cancel restores the previous values.
 /// </summary>
-public sealed class SettingsDialog : DialogWindow
+public sealed partial class SettingsDialog : DialogWindow
 {
     private readonly AppSettings _s = AppSettings.Current;
     private readonly Dictionary<string, FrameworkElement> _pages = new();
@@ -39,6 +39,7 @@ public sealed class SettingsDialog : DialogWindow
         _pages["Plugins"] = BuildPlugins();
         _pages["Appearance"] = BuildAppearance();
         _pages["Editor"] = BuildEditor();
+        _pages["Live Templates"] = BuildTemplates();
         _pages["PHP"] = BuildPhp();
         if (Workspace.Root != null) _pages["Composer packages"] = BuildPackages();
         _pages["New projects"] = BuildProjects();
@@ -778,6 +779,7 @@ public sealed class SettingsDialog : DialogWindow
         _s.VendorName = _vendor.Text.Trim();
         _s.AuthorName = _author.Text.Trim();
         _s.AuthorEmail = _email.Text.Trim();
+        CommitTemplates();
         _committed = true;
         DisplayManager.Apply(save: true);
     }

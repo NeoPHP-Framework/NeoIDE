@@ -75,6 +75,7 @@ public static class TwigInsight
         foreach (Match m in ForLoop.Matches(text))
         {
             if (m.Index >= offset) break;
+            if (m.Index + m.Length > offset) continue; // the caret is in the {% for %} tag itself: not in the loop yet
             // still in the loop: as many {% endfor %} as {% for %} between the loop and the offset is required
             var between = text[(m.Index + m.Length)..offset];
             if (Regex.Matches(between, @"\{%-?\s*endfor\b").Count > Regex.Matches(between, @"\{%-?\s*for\b").Count) continue;
