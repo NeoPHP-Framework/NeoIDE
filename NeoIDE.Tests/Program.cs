@@ -280,6 +280,48 @@ if (args.Length == 3 && args[0] == "--render")
                 }
                 continue;
             }
+            if (onlyWhat == "html")
+            {
+                // typing in a Twig template: Emmet with Tab, end tags on ">", "</", completion of attributes
+                void Ok(string name, bool ok, string detail = "") => Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}{(ok || detail.Length == 0 ? "" : "  → " + detail.Replace("\n", "⏎"))}");
+                var page = Path.Combine(project, "templates", "emmet-test.html.twig");
+                File.WriteAllText(page, "{% block body %}\n{% endblock %}\n");
+                var ed = new CodeEditor();
+                ed.Load(page, File.ReadAllText(page));
+                var hw = new System.Windows.Window { Content = ed, Background = ThemeManager.Brush("EditorBg") };
+                try
+                {
+                    Snap(hw, $"html-{tn0}", 900, 420, () =>
+                    {
+                        ed.TextArea.Focus();
+                        void Type(string s) { foreach (var ch in s) ed.TextArea.PerformTextInput(ch.ToString()); }
+                        var body = ed.Text.IndexOf("\n{% endblock") ;
+                        ed.Document.Insert(body, "\n    ");
+                        ed.CaretOffset = body + 5;
+                        Type("section#posts.list>h2{Posts}+ul>li.post$*2>a");
+                        var expanded = ed.TryExpandAbbreviation();
+                        Ok("Tab expands an abbreviation in a Twig template", expanded && ed.Text.Contains("<section id=\"posts\" class=\"list\">\n        <h2>Posts</h2>\n        <ul>\n            <li class=\"post1\"><a href=\"\"></a></li>"), ed.Text);
+                        Ok("the caret goes to the first empty attribute", ed.Text.Substring(ed.CaretOffset - 9, 9) == "<a href=\"", ed.Text.Substring(Math.Max(0, ed.CaretOffset - 12), Math.Min(12, ed.CaretOffset)));
+                        ed.CaretOffset = ed.Text.IndexOf("{% endblock");
+                        ed.Document.Insert(ed.CaretOffset, "    \n");
+                        ed.CaretOffset -= 1;
+                        Type("<p class=\"lead\">");
+                        Ok("typing the > of a start tag adds its end tag", ed.Text.Contains("<p class=\"lead\"></p>") && ed.Text[ed.CaretOffset..].StartsWith("</p>"), ed.Text);
+                        Type("Hi <strong>x");
+                        ed.CaretOffset = ed.Text.IndexOf("</strong>") + "</strong>".Length;
+                        ed.Document.Remove(ed.CaretOffset, "</p>".Length);
+                        Type("</");
+                        Ok("</ closes the innermost open element", ed.Text.Contains("<p class=\"lead\">Hi <strong>x</strong></p>"), ed.Text);
+                        Ok("p.test + Tab", Emmet.Expand("p.test")?.Replace(Emmet.Caret.ToString(), "") == "<p class=\"test\"></p>");
+                        var noExpand = new CodeEditor();
+                        noExpand.Load(page, "{{ div }}");
+                        noExpand.CaretOffset = 6;
+                        Ok("no expansion inside a Twig expression", !noExpand.TryExpandAbbreviation());
+                    });
+                }
+                finally { File.Delete(page); hw.Close(); }
+                continue;
+            }
             if (onlyWhat == "newclass")
             {
                 // the dialog with the completion of "extends" open; the popup has its own window: rendered apart
@@ -961,6 +1003,60 @@ try { Directory.Delete(repo, true); } catch { }
     var json = CodeFormatter.FormatJson("{\"a\":[1,2],\"b\":{\"c\":\"/x é\"}}", 4);
     Check("reformat JSON (order, unescaped / and accents)", json == "{\n    \"a\": [\n        1,\n        2\n    ],\n    \"b\": {\n        \"c\": \"/x é\"\n    }\n}\n", json ?? "null");
     Check("reformat JSON: invalid JSON is left alone", CodeFormatter.FormatJson("{\"a\":", 4) == null);
+
+    // Emmet abbreviations + HTML completion
+    string E(string abbr) => Emmet.Expand(abbr) is { } x ? x.Replace(Emmet.Caret, '|') : "null";
+    var emmetCases = new (string abbr, string html)[]
+    {
+        ("h1", "<h1>|</h1>"),
+        ("p.test", "<p class=\"test\">|</p>"),
+        ("div#main.box.big", "<div id=\"main\" class=\"box big\">|</div>"),
+        (".card", "<div class=\"card\">|</div>"),
+        ("a", "<a href=\"|\">|</a>"),
+        ("a.btn[target=_blank]{Home}", "<a href=\"|\" class=\"btn\" target=\"_blank\">Home</a>"),
+        ("img", "<img src=\"|\" alt=\"|\">"),
+        ("input[type=email name=mail]", "<input type=\"email\" name=\"mail\">"),
+        ("ul>li.item$*3", "<ul>\n    <li class=\"item1\">|</li>\n    <li class=\"item2\">|</li>\n    <li class=\"item3\">|</li>\n</ul>"),
+        ("ul>.x", "<ul>\n    <li class=\"x\">|</li>\n</ul>"),
+        ("div+p", "<div>|</div>\n<p>|</p>"),
+        ("nav>a*2^p", "<nav><a href=\"|\">|</a><a href=\"|\">|</a></nav>\n<p>|</p>"),
+        ("nav>a*3", "<nav>\n    <a href=\"|\">|</a>\n    <a href=\"|\">|</a>\n    <a href=\"|\">|</a>\n</nav>"),
+        ("table>(tr>td*2)*2", "<table>\n    <tr>\n        <td>|</td>\n        <td>|</td>\n    </tr>\n    <tr>\n        <td>|</td>\n        <td>|</td>\n    </tr>\n</table>"),
+        ("p>span{a}+strong{b}", "<p><span>a</span><strong>b</strong></p>"),
+        ("hello", "null"),
+        ("my-card.x", "<my-card class=\"x\">|</my-card>"),
+    };
+    var emmetFailures = emmetCases.Where(c => E(c.abbr) != c.html).Select(c => $"{c.abbr} → {E(c.abbr)}").ToList();
+    Check("Emmet: tags, id / classes, attributes, text, children, siblings, climb, groups, multipliers, numbering", emmetFailures.Count == 0, string.Join("\n   ", emmetFailures));
+    Check("Emmet: ! is an HTML5 document", E("!").StartsWith("<!DOCTYPE html>\n<html lang=\"en\">") && E("!").Contains("<title>|</title>"));
+    Check("Emmet: indentation of the line kept", Emmet.Expand("ul>li", "  ", "\n", "    ")!.Replace(Emmet.Caret.ToString(), "") == "<ul>\n      <li></li>\n    </ul>");
+    var abbrCases = new (string line, string? abbr)[]
+    {
+        ("    h1", "h1"), ("<div>p.x", "p.x"), ("text ul>li*2", "ul>li*2"), ("a[title=\"a b\"]", "a[title=\"a b\"]"), ("<div", null), ("<div>", null), ("p{Hello world}", "p{Hello world}"),
+    };
+    var abbrFailures = abbrCases.Where(c => Emmet.AbbreviationBefore(c.line)?.abbreviation != c.abbr).Select(c => $"{c.line} → {Emmet.AbbreviationBefore(c.line)?.abbreviation ?? "null"}").ToList();
+    Check("Emmet: abbreviation before the caret", abbrFailures.Count == 0, string.Join(" | ", abbrFailures));
+
+    var htmlDoc = "<div class=\"a\">\n  <ul>\n    <li><a href=\"#\" target=\"\">x</a></li>\n    <img src=\"a.png\">\n    <\n";
+    var lastLt = htmlDoc.LastIndexOf('<') + 1;
+    Check("HTML context: tag name, attribute name, attribute value, text",
+        HtmlCompletion.ContextAt(htmlDoc, lastLt, "HTML")?.Kind == HtmlContextKind.TagName
+        && HtmlCompletion.ContextAt("<a hr", 5, "HTML") is { Kind: HtmlContextKind.AttributeName, Tag: "a", Start: 3 }
+        && HtmlCompletion.ContextAt("<a target=\"_b", 13, "HTML") is { Kind: HtmlContextKind.AttributeValue, Attribute: "target" }
+        && HtmlCompletion.ContextAt("<p>hello", 8, "HTML")?.Kind == HtmlContextKind.Text);
+    Check("HTML context: not in PHP code nor in a Twig expression",
+        HtmlCompletion.ContextAt("<?php $a = '<b';", 14, "PHP") == null && HtmlCompletion.ContextAt("<p><?= $x ?> <b", 15, "PHP")?.Kind == HtmlContextKind.TagName
+        && HtmlCompletion.ContextAt("{{ a < b }}", 6, "Twig") == null);
+    Check("HTML: innermost open element for </", HtmlCompletion.InnermostOpenTag(htmlDoc, htmlDoc.Length) == "ul");
+    Check("HTML: end tag inserted after the > of a start tag (not void / self-closed / end tag)",
+        HtmlCompletion.EndTagFor("<div class=\"a>b\">", 16, "HTML") == "</div>" && HtmlCompletion.EndTagFor("<br>", 3, "HTML") == null
+        && HtmlCompletion.EndTagFor("<x/>", 3, "HTML") == null && HtmlCompletion.EndTagFor("</p>", 3, "HTML") == null
+        && HtmlCompletion.EndTagFor("<p>", 2, "PHP") == "</p>" && HtmlCompletion.EndTagFor("<?php $a->", 9, "PHP") == null);
+    var attrs = HtmlCompletion.Complete("<a cl", 5, "HTML");
+    var vals = HtmlCompletion.Complete("<input type=\"", 13, "HTML");
+    Check("HTML completion: tag attributes (name=\"\" with the caret inside) and known values",
+        attrs?.entries.Any(x => x.Label == "href" && x.Insert == "href=\"\"" && x.CaretBack == 1) == true && attrs.Value.entries.Any(x => x.Label == "class")
+        && vals?.entries.Any(x => x.Label == "email") == true);
 
     // template variables: fixture controller / entity / templates in the e2e project (removed afterwards)
     var fixtures = new Dictionary<string, string>

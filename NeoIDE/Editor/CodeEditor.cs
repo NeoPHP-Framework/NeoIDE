@@ -508,6 +508,9 @@ public sealed partial class CodeEditor : TextEditor
             return;
         }
 
+        // HTML markup (HTML, Twig, HTML of PHP views): end tags, tag / attribute completion
+        if (SupportsHtml && OnHtmlTyped(c, caret)) return;
+
         // CSS (files, <style> blocks, style="" attributes): first letter of a word, ':', '@', '!', '.', '--'
         if (_completion == null && (Language == "CSS" || Language is "HTML" or "Twig" or "PHP" && CssRegion(Text, caret) != null))
         {
@@ -574,6 +577,7 @@ public sealed partial class CodeEditor : TextEditor
         if (key == Key.L && mods == (ModifierKeys.Control | ModifierKeys.Alt)) { _ = ReformatAsync(); e.Handled = true; return; }
         if (key is Key.Up or Key.Down && mods == (ModifierKeys.Control | ModifierKeys.Shift)) { MoveLine(key == Key.Up ? -1 : 1); e.Handled = true; return; }
         if (key == Key.Escape && _completion == null) { _hoverTip.IsOpen = false; }
+        if (key == Key.Tab && mods == ModifierKeys.None && _completion == null && TextArea.Selection.IsEmpty && SupportsHtml && TryExpandAbbreviation()) { e.Handled = true; return; }
         if (key == Key.F2 && mods is ModifierKeys.None or ModifierKeys.Shift) { GoToProblem(mods == ModifierKeys.Shift ? -1 : 1); e.Handled = true; return; }
         if (key == Key.F8 && mods == ModifierKeys.Control) { ToggleBreakpoint(Document.GetLineByOffset(CaretOffset).LineNumber); e.Handled = true; return; }
 
@@ -697,6 +701,11 @@ public sealed partial class CodeEditor : TextEditor
         {
             start = twig.start;
             entries = twig.entries;
+        }
+        else if (SupportsHtml && HtmlCompletion.Complete(text, caret, Language) is { } html)
+        {
+            start = html.start;
+            entries = html.entries;
         }
         else if (IsPhp)
         {

@@ -20,6 +20,8 @@ The IDE of the [NeoPHP](https://github.com/NeoPHP-Framework) framework — a Php
   NeoPHP checks — underlined in the editor, error stripe, F2 / Shift+F2, Problems tool window (Alt+6)
 - **Xdebug debugger**: breakpoints (conditional), Run › Debug `bin/neo serve` / a neo command / a script, step over / into / out,
   call stack, variables, watches, evaluate, set value, Docker path mapping (Debug tool window, Alt+5)
+- **HTML** (HTML, Twig, PHP views): Emmet abbreviations with Tab (`h1`, `p.test`, `ul>li.item$*3`, `a[href=#]{Home}`, `!`),
+  tag / attribute / value completion, end tag added on `>`, `</` closes the open element
 - **Syntax highlighting** for PHP, Twig, HTML, CSS, JS/TS, YAML, JSON, Markdown, SQL, XML, .env… + CSS completion and colour picker
 - **Git**: changes, partial commits, log, branches, diff
 - **Terminal**: real terminals (ConPTY) — PowerShell, PowerShell 7, Cmd, Git Bash, WSL — with colours, history, full-screen
