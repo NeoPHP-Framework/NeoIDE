@@ -1034,6 +1034,40 @@ try { Directory.Delete(repo, true); } catch { }
         Check("PHP view completion: $this-> is the Template", thisComp.Entries.Any(e => e.Label.StartsWith("extend")) && thisComp.Entries.Any(e => e.Label.StartsWith("section")), string.Join(",", thisComp.Entries.Take(12).Select(e => e.Label)));
         Check("PHP view: $variable resolves to the render() call", TemplateVariables.PhpViewVariableAt(list, list.IndexOf("$title") + 2, listFile)?.Source == "V3TestController::list()");
 
+        // arrays given to render(): keys completed / checked / navigated in Twig
+        var shapeCtl = Path.Combine(e2e, "src", "Controller", "V3ShapeController.php");
+        var shapeTpl = Path.Combine(e2e, "templates", "v3", "shape.html.twig");
+        File.WriteAllText(shapeCtl, "<?php\nnamespace App\\Controller;\n\nuse NeoPHP\\Component\\Controller\\Contract\\AbstractController;\n\nclass V3ShapeController extends AbstractController\n{\n    public function index()\n    {\n        return $this->render('v3/shape.html.twig', [\n            'controller' => [\n                'url' => $this->generateUrl('home'),\n                'route' => 'home_index',\n                'controller' => self::class,\n                'meta' => ['count' => 3],\n            ],\n            'datas' => [],\n        ]);\n    }\n}\n");
+        var shapeText = "{{ controller.ro }}\n{{ controller.meta.count }} {{ controller.rout }} {{ controller. }}\n";
+        File.WriteAllText(shapeTpl, shapeText);
+        try
+        {
+            Workspace.Index.UpdateFile(shapeCtl);
+            NeoProject.Build(e2e);
+            TemplateVariables.Invalidate();
+            var shapeVar = TemplateVariables.For(shapeTpl).FirstOrDefault(v => v.Name == "controller");
+            Check("render() array literal: its keys are recorded (nested, with types)",
+                shapeVar?.Shape is { } sh && sh.Keys.Select(k => k.Name).SequenceEqual(new[] { "url", "route", "controller", "meta" }) && sh.Keys[1].Type == "string" && sh.Keys[3].Shape?.Keys[0].Name == "count",
+                shapeVar?.Shape == null ? "no shape" : string.Join(", ", shapeVar.Shape.Keys.Select(k => $"{k.Name}:{k.Type}")));
+            var keyComp = TwigInsight.Complete(shapeText, "{{ controller.ro".Length, shapeTpl);
+            var keyComp2 = TwigInsight.Complete(shapeText, shapeText.IndexOf("{{ controller. }}") + "{{ controller.".Length, shapeTpl);
+            Check("Twig completion of the keys of an array given to render()",
+                keyComp?.entries.Any(e => e.Label == "route") == true && keyComp2?.entries.Select(e => e.Label).ToList() is { } kl && kl.Contains("url") && kl.Contains("meta") && kl.Contains("controller"),
+                string.Join(",", keyComp?.entries.Select(e => e.Label) ?? Array.Empty<string>()));
+            var keyProblems = TwigInsight.Problems(shapeText, shapeTpl);
+            Check("Twig check: unknown key of the array (nested keys accepted)",
+                keyProblems.Count == 2 && keyProblems.All(p => p.Message.StartsWith("Unknown key")) && keyProblems.Any(p => p.Message.Contains("'rout'") && p.Suggestions.FirstOrDefault() == "route"),
+                string.Join(" | ", keyProblems.Select(p => p.Message)));
+            var keySym = TwigInsight.SymbolAt(shapeText, shapeText.IndexOf("meta") + 1, shapeTpl);
+            Check("Twig navigation: key → the array of render()", keySym?.File != null && string.Equals(Path.GetFullPath(keySym.File), Path.GetFullPath(shapeCtl), StringComparison.OrdinalIgnoreCase) && File.ReadAllText(shapeCtl).Substring(keySym.Offset, 4) == "meta", keySym?.Description ?? "null");
+        }
+        finally
+        {
+            File.Delete(shapeCtl);
+            File.Delete(shapeTpl);
+            Workspace.Index.RemoveFile(shapeCtl);
+        }
+
         // New PHP Class: completion of extends / implements
         var parents = NeoIDE.Controls.ClassAutoComplete.Candidates("FrameEx", c => c.Kind == PhpClassKind.Class && !c.IsFinal);
         Check("New class dialog: parent class completion (camel humps)", parents.FirstOrDefault()?.Fqn.EndsWith("\\FrameworkException") == true, string.Join(", ", parents.Take(5).Select(c => c.Fqn)));

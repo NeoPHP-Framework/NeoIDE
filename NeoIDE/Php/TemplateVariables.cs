@@ -7,7 +7,12 @@ using NeoIDE.Services.Diagnostics;
 namespace NeoIDE.Php;
 
 /// <summary>A variable a template receives: <see cref="File"/> / <see cref="Offset"/> point at the key in render().</summary>
-public sealed record TemplateVar(string Name, string? Type, string File, int Offset, string Source);
+public sealed record TemplateVar(string Name, string? Type, string File, int Offset, string Source, ArrayShape? Shape = null);
+
+/// <summary>The keys of an array literal (<c>['url' => ..., 'route' => ...]</c>); <see cref="Open"/> when some entries are not literal keys.</summary>
+public sealed record ArrayShape(IReadOnlyList<ArrayKey> Keys, bool Open);
+
+public sealed record ArrayKey(string Name, string? Type, ArrayShape? Shape, string File, int Offset);
 
 /// <summary>
 /// Variables of the templates: the arrays given to <c>render('home/index', ['user' => $user])</c> (and compact()) in
@@ -44,7 +49,7 @@ public static class TemplateVariables
             {
                 var types = g.Select(v => v.Type).Where(t => !string.IsNullOrEmpty(t)).Distinct().ToList();
                 var first = g.First();
-                return first with { Type = types.Count == 0 ? null : string.Join("|", types) };
+                return first with { Type = types.Count == 0 ? null : string.Join("|", types), Shape = g.Select(v => v.Shape).FirstOrDefault(s => s != null) };
             }).OrderBy(v => v.Name).ToList();
         }
     }
@@ -144,8 +149,14 @@ public static class TemplateVariables
             foreach (var (name, keyOffset, exprStart, exprEnd, isCompact) in args.Entries)
             {
                 string? type = null;
-                try { type = controller ? TypeOf(info, sig, exprStart, exprEnd, isCompact ? "$" + name : null) : null; } catch { }
-                vars.Add(new TemplateVar(name, type, file, keyOffset, source));
+                ArrayShape? shape = null;
+                try
+                {
+                    if (!isCompact) shape = ParseShape(text, exprStart, exprEnd, file, (s, e) => controller ? TypeOf(info, sig, s, e, null) : null);
+                    type = shape != null ? "array" : controller ? TypeOf(info, sig, exprStart, exprEnd, isCompact ? "$" + name : null) : null;
+                }
+                catch { }
+                vars.Add(new TemplateVar(name, type, file, keyOffset, source, shape));
             }
             sites.Add(new Site(target, vars, args.Dynamic));
         }
@@ -201,6 +212,49 @@ public static class TemplateVariables
             else if (part.Trim().Length > 0) dynamic = true; // ...$spread or a computed key
         }
         return new Arguments(entries, dynamic);
+    }
+
+    /// <summary>
+    /// Keys of an array literal written in [start, end) — nested arrays included — with the type of each value;
+    /// null when the expression is not an array literal with string keys.
+    /// </summary>
+    public static ArrayShape? ParseShape(string text, int start, int end, string file, Func<int, int, string?> typeOf, int depth = 0)
+    {
+        if (depth > 6) return null;
+        int i = SkipWs(text, start);
+        if (i >= end) return null;
+        int bodyStart, bodyEnd;
+        if (text[i] == '[') { bodyStart = i + 1; bodyEnd = Close(text, i, '[', ']'); }
+        else if (Regex.IsMatch(text[i..Math.Min(text.Length, i + 8)], @"^array\s*\(", RegexOptions.IgnoreCase)) { var p = text.IndexOf('(', i); bodyStart = p + 1; bodyEnd = Close(text, p, '(', ')'); }
+        else return null;
+        if (bodyEnd < 0 || bodyEnd > end) return null;
+        var keys = new List<ArrayKey>();
+        bool open = false;
+        foreach (var (s, e) in SplitTopLevel(text, bodyStart, bodyEnd))
+        {
+            var m = Regex.Match(text[s..e], @"^\s*(?<q>['""])(?<k>[^'""]+)\k<q>\s*=>\s*");
+            if (!m.Success) { if (text[s..e].Trim().Length > 0) open = true; continue; }
+            var valueStart = s + m.Length;
+            var nested = ParseShape(text, valueStart, e, file, typeOf, depth + 1);
+            string? type = null;
+            if (nested == null) try { type = typeOf(valueStart, e) ?? LiteralType(text[valueStart..e]); } catch { }
+            keys.Add(new ArrayKey(m.Groups["k"].Value, nested != null ? "array" : type, nested, file, s + m.Groups["k"].Index));
+        }
+        return keys.Count == 0 ? null : new ArrayShape(keys, open);
+    }
+
+    /// <summary>Type of a literal value ('a', 12, 1.5, true, null, [..]).</summary>
+    private static string? LiteralType(string expr)
+    {
+        expr = expr.Trim();
+        if (Regex.IsMatch(expr, @"^(['""]).*\1$", RegexOptions.Singleline)) return "string";
+        if (Regex.IsMatch(expr, @"^-?\d+$")) return "int";
+        if (Regex.IsMatch(expr, @"^-?\d*\.\d+$")) return "float";
+        if (Regex.IsMatch(expr, @"^(?i:true|false)$")) return "bool";
+        if (Regex.IsMatch(expr, @"^(?i:null)$")) return "null";
+        if (expr.StartsWith('[') || Regex.IsMatch(expr, @"^array\s*\(", RegexOptions.IgnoreCase)) return "array";
+        if (Regex.IsMatch(expr, @"::class$")) return "string";
+        return null;
     }
 
     private static int SkipWs(string text, int i)
@@ -315,5 +369,5 @@ public static class TemplateVariables
     }
 
     public static string Describe(TemplateVar v) =>
-        $"${v.Name}: {(string.IsNullOrEmpty(v.Type) ? "mixed" : PhpTypes.Short(v.Type))}\npassed by {v.Source}";
+        $"${v.Name}: {(v.Shape != null ? "array {" + string.Join(", ", v.Shape.Keys.Select(k => k.Name)) + "}" : string.IsNullOrEmpty(v.Type) ? "mixed" : PhpTypes.Short(v.Type))}\npassed by {v.Source}";
 }

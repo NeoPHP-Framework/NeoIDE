@@ -47,7 +47,10 @@ public static class TwigInsight
     private static readonly Regex SetVar = new(@"\{%-?\s*set\s+(?<v>\w+)\s*=\s*(?<expr>.+?)\s*-?%\}", RegexOptions.Compiled);
     private static readonly Regex Chain = new(@"(?<![\w.$|])(?<chain>[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*(?:\([^()]*\))?)+)", RegexOptions.Compiled);
 
-    private sealed record Local(string Name, string? Type, int Offset, string Description);
+    private sealed record Local(string Name, string? Type, int Offset, string Description, ArrayShape? Shape = null);
+
+    /// <summary>What a Twig expression evaluates to: a PHP type and, for an array literal of render(), its keys.</summary>
+    public readonly record struct TwigValue(string? Type, ArrayShape? Shape);
 
     // ------------------------------------------------------------------ regions / variables
 
@@ -85,37 +88,60 @@ public static class TwigInsight
         foreach (Match m in SetVar.Matches(text))
         {
             if (m.Index >= offset) break;
-            var type = ResolveExpression(m.Groups["expr"].Value, text, m.Index, file);
-            list.Add(new Local(m.Groups["v"].Value, type, m.Groups["v"].Index, $"{m.Groups["v"].Value}: {(type != null ? PhpTypes.Short(type) : "mixed")}\nset to {m.Groups["expr"].Value.Trim()}"));
+            var value = ResolveValue(m.Groups["expr"].Value, text, m.Index, file);
+            var type = value.Type;
+            list.Add(new Local(m.Groups["v"].Value, type, m.Groups["v"].Index, $"{m.Groups["v"].Value}: {(type != null ? PhpTypes.Short(type) : "mixed")}\nset to {m.Groups["expr"].Value.Trim()}", value.Shape));
         }
         return list;
     }
 
-    private static string? VariableType(string name, string text, int offset, string? file, int guard = 0)
+    private static TwigValue VariableValue(string name, string text, int offset, string? file)
     {
-        if (guard > 4) return null;
         var local = Locals(text, offset, file).LastOrDefault(l => l.Name == name);
-        if (local != null) return local.Type;
-        return TemplateVariables.For(file).FirstOrDefault(v => v.Name == name)?.Type;
+        if (local != null) return new TwigValue(local.Type, local.Shape);
+        var v = TemplateVariables.For(file).FirstOrDefault(x => x.Name == name);
+        return new TwigValue(v?.Type, v?.Shape);
     }
 
-    /// <summary>Type of a Twig expression made of a variable and attributes ("post.author.name"); filters are ignored.</summary>
-    public static string? ResolveExpression(string expr, string text, int offset, string? file)
+    /// <summary>One step of "a.b": the key of an array given to render(), else the attribute of the object.</summary>
+    private static TwigValue Step(TwigValue value, string name)
+    {
+        if (value.Shape != null)
+        {
+            var key = value.Shape.Keys.FirstOrDefault(k => k.Name == name);
+            return key == null ? default : new TwigValue(key.Type ?? "mixed", key.Shape);
+        }
+        var cls = ClassOf(value.Type);
+        if (cls == null) return default;
+        return new TwigValue(Attribute(cls, name)?.Member.EffectiveType, null);
+    }
+
+    /// <summary>Value of a Twig expression made of a variable and attributes / keys ("post.author.name"); filters are ignored.</summary>
+    public static TwigValue ResolveValue(string expr, string text, int offset, string? file)
     {
         expr = expr.Trim();
         var pipe = expr.IndexOf('|');
         if (pipe >= 0) expr = expr[..pipe].Trim();
         var m = Regex.Match(expr, @"^(?<v>[A-Za-z_]\w*)(?<rest>(?:\s*\.\s*[A-Za-z_]\w*(?:\([^()]*\))?)*)$");
-        if (!m.Success) return null;
-        var type = VariableType(m.Groups["v"].Value, text, offset, file);
+        if (!m.Success) return default;
+        var value = VariableValue(m.Groups["v"].Value, text, offset, file);
         foreach (Match a in Regex.Matches(m.Groups["rest"].Value, @"\.\s*(?<a>[A-Za-z_]\w*)"))
         {
-            var cls = ClassOf(type);
-            if (cls == null) return null;
-            type = Attribute(cls, a.Groups["a"].Value)?.Member.EffectiveType;
+            value = Step(value, a.Groups["a"].Value);
+            if (value.Type == null && value.Shape == null) return default;
         }
-        return type;
+        return value;
     }
+
+    /// <summary>Type of a Twig expression ("post.author.name").</summary>
+    public static string? ResolveExpression(string expr, string text, int offset, string? file) => ResolveValue(expr, text, offset, file).Type;
+
+    private static List<CompletionEntry> KeyEntries(ArrayShape shape) =>
+        shape.Keys.Select(k => new CompletionEntry
+        {
+            Label = k.Name, Insert = k.Name, Kind = EntryKind.Property, Priority = 7,
+            TypeText = k.Shape != null ? "array" : PhpTypes.Short(k.Type), Tail = "  key",
+        }).ToList();
 
     private static string? ClassOf(string? type) => PhpTypes.ClassNames(type).FirstOrDefault(c => Workspace.Index.GetClass(c) != null);
 
@@ -190,7 +216,9 @@ public static class TwigInsight
                 entries.AddRange(LoopAttributes.Select(a => new CompletionEntry { Label = a, Insert = a, Kind = EntryKind.Property, Priority = 5 }));
                 return (start, entries);
             }
-            var cls = ClassOf(ResolveExpression(chain, text, cs, file));
+            var value = ResolveValue(chain, text, cs, file);
+            if (value.Shape != null) return (start, KeyEntries(value.Shape));
+            var cls = ClassOf(value.Type);
             if (cls == null) return (start, entries);
             foreach (var (name, m) in AttributeNames(cls))
                 entries.Add(new CompletionEntry
@@ -244,7 +272,10 @@ public static class TwigInsight
         {
             var cs = p;
             while (cs > rs && (char.IsLetterOrDigit(text[cs - 1]) || text[cs - 1] is '_' or '.')) cs--;
-            var cls = ClassOf(ResolveExpression(text[cs..p], text, cs, file));
+            var receiver = ResolveValue(text[cs..p], text, cs, file);
+            if (receiver.Shape?.Keys.FirstOrDefault(k => k.Name == word) is { } key)
+                return new TwigSymbol(s, e - s, key.File, key.Offset, $"{text[cs..p].Trim()}.{word}: {(key.Shape != null ? "array {" + string.Join(", ", key.Shape.Keys.Select(k => k.Name)) + "}" : PhpTypes.Short(key.Type ?? "mixed"))}\nkey of the array given to render()");
+            var cls = ClassOf(receiver.Type);
             if (cls == null) return null;
             var m = Attribute(cls, word);
             if (m == null) return null;
@@ -273,23 +304,40 @@ public static class TwigInsight
                 var parts = Regex.Matches(m.Groups["chain"].Value, @"[A-Za-z_]\w*(?:\([^()]*\))?").ToList();
                 var head = parts[0].Value;
                 if (head is "loop" or "app" or "_self" or "_context") continue;
-                var type = VariableType(head, text, rs + m.Index, file);
+                var value = VariableValue(head, text, rs + m.Index, file);
                 for (int i = 1; i < parts.Count; i++)
                 {
+                    var name = Regex.Match(parts[i].Value, @"^\w+").Value;
+                    var at = rs + m.Groups["chain"].Index + parts[i].Index;
+                    if (value.Shape != null)
+                    {
+                        // keys of an array literal given to render()
+                        var key = value.Shape.Keys.FirstOrDefault(k => k.Name == name);
+                        if (key == null)
+                        {
+                            if (value.Shape.Open) break;
+                            var close = Suggest(name, value.Shape.Keys.Select(k => k.Name));
+                            var owner = string.Join(".", parts.Take(i).Select(x => Regex.Match(x.Value, @"^\w+").Value));
+                            list.Add(new TwigProblem(at, name.Length,
+                                $"Unknown key '{name}' of {owner} (keys: {string.Join(", ", value.Shape.Keys.Select(k => k.Name))})" + (close.Count > 0 ? $" — did you mean '{close[0]}'?" : ""), close));
+                            break;
+                        }
+                        value = new TwigValue(key.Type, key.Shape);
+                        continue;
+                    }
+                    var type = value.Type;
                     var cls = ClassOf(type);
                     if (cls == null || IsDynamic(cls)) break;
-                    var name = Regex.Match(parts[i].Value, @"^\w+").Value;
                     var member = Attribute(cls, name);
                     if (member == null)
                     {
                         var names = AttributeNames(cls).Select(a => a.name).ToList();
                         var close = Suggest(name, names);
-                        var at = rs + m.Groups["chain"].Index + parts[i].Index;
                         list.Add(new TwigProblem(at, name.Length,
                             $"Unknown attribute '{name}' of {cls.Split('\\').Last()}" + (close.Count > 0 ? $" — did you mean '{close[0]}'?" : ""), close));
                         break;
                     }
-                    type = member.Value.Member.EffectiveType;
+                    value = new TwigValue(member.Value.Member.EffectiveType, null);
                 }
             }
         }
