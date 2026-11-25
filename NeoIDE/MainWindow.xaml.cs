@@ -92,6 +92,7 @@ public partial class MainWindow : Window, IIdeShell
         });
         UpdateEmptyHint();
         InitProblems();
+        InitProjectFiles();
         InitDebugger();
     }
 
@@ -1064,6 +1065,7 @@ public partial class MainWindow : Window, IIdeShell
 
     private void ProjectTree_KeyDown(object sender, KeyEventArgs e)
     {
+        if (TreeClipboardKey(e.Key)) { e.Handled = true; return; }
         var n = SelectedNode;
         if (n == null) return;
         switch (e.Key)
@@ -1264,8 +1266,20 @@ public partial class MainWindow : Window, IIdeShell
             "References are updated (classes, namespaces, use statements, templates). You will see the list of files before anything is changed.",
             v => v == n.Name ? null : ValidateNewPath(dir)(v));
         if (name == null || name == n.Name) return;
+        MovePath(n, Path.Combine(dir, name), "Rename");
+    }
+
+    /// <summary>
+    /// Renames / moves a file or a directory of the project, with the refactoring of its references (class and
+    /// namespace of PHP files, use statements, template names) shown first. Returns false when nothing moved.
+    /// </summary>
+    private bool MovePath(FileNode n, string target, string verb, bool confirmRefactoring = true)
+    {
+        if (Workspace.Root == null) return false;
         var oldPath = n.FullPath;
-        var target = Path.Combine(dir, name);
+        var dir = Path.GetDirectoryName(oldPath)!;
+        var newDir = Path.GetDirectoryName(target)!;
+        var name = Path.GetFileName(target);
         try
         {
             SaveAll();
@@ -1282,9 +1296,16 @@ public partial class MainWindow : Window, IIdeShell
                 var cls = Workspace.Index.GetFile(oldPath)?.Classes.FirstOrDefault(c => c.Name == oldClass);
                 if (cls != null && Regex.IsMatch(newClass, @"^[A-Za-z_]\w*$"))
                 {
-                    var newFqn = (cls.Namespace.Length > 0 ? cls.Namespace + "\\" : "") + newClass;
-                    changes = RefactorService.RenameClasses(Workspace.Root, new Dictionary<string, string> { [cls.Fqn] = newFqn }, new(), Read);
-                    description = $"Rename class {cls.Fqn} → {newClass}";
+                    // moved to another directory: the namespace of that PSR-4 directory
+                    var newNs = string.Equals(dir, newDir, StringComparison.OrdinalIgnoreCase) ? cls.Namespace : Workspace.NamespaceForDirectory(newDir) ?? cls.Namespace;
+                    var newFqn = (newNs.Length > 0 ? newNs + "\\" : "") + newClass;
+                    if (!string.Equals(newFqn, cls.Fqn, StringComparison.Ordinal))
+                    {
+                        var movedFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        if (newNs != cls.Namespace) movedFiles[oldPath] = newNs;
+                        changes = RefactorService.RenameClasses(Workspace.Root, new Dictionary<string, string> { [cls.Fqn] = newFqn }, movedFiles, Read);
+                        description = newNs != cls.Namespace ? $"Move class {cls.Fqn} → {newFqn}" : $"Rename class {cls.Fqn} → {newClass}";
+                    }
                 }
             }
             else if (n.IsDirectory)
@@ -1307,7 +1328,8 @@ public partial class MainWindow : Window, IIdeShell
                     }
                 }
             }
-            if (oldPath.StartsWith(templatesDir + "\\", StringComparison.OrdinalIgnoreCase) && Path.GetExtension(oldPath) is ".php" or ".twig")
+            if (oldPath.StartsWith(templatesDir + "\\", StringComparison.OrdinalIgnoreCase) && target.StartsWith(templatesDir + "\\", StringComparison.OrdinalIgnoreCase)
+                && Path.GetExtension(oldPath) is ".php" or ".twig")
             {
                 static string TemplateName(string root, string p)
                 {
@@ -1323,11 +1345,11 @@ public partial class MainWindow : Window, IIdeShell
                 }
             }
 
-            if (changes.Count > 0)
+            if (changes.Count > 0 && confirmRefactoring)
             {
                 var list = string.Join("\n", changes.Take(25).Select(c => $"  {Path.GetRelativePath(Workspace.Root, c.Path)}   ({c.Occurrences})"))
                            + (changes.Count > 25 ? $"\n  … {changes.Count - 25} more" : "");
-                if (!MessageDialog.Confirm("Rename refactoring", $"{description}\n\n{changes.Sum(c => c.Occurrences)} change(s) in {changes.Count} file(s):\n{list}", "Refactor", "Rename only"))
+                if (!MessageDialog.Confirm($"{verb} refactoring", $"{description}\n\n{changes.Sum(c => c.Occurrences)} change(s) in {changes.Count} file(s):\n{list}", "Refactor", $"{verb} only"))
                     changes.Clear();
             }
 
@@ -1350,10 +1372,14 @@ public partial class MainWindow : Window, IIdeShell
             else if (target.EndsWith(".php", StringComparison.OrdinalIgnoreCase)) { Workspace.Index.RemoveFile(oldPath); Workspace.Index.UpdateFile(target); }
             foreach (var p in openTabs) OpenFile(Moved(p), focus: false);
             _root?.Find(dir)?.Reload();
+            if (!string.Equals(dir, newDir, StringComparison.OrdinalIgnoreCase)) _root?.Find(newDir)?.Reload();
+            Php.NeoProject.Invalidate(target);
             SelectInProject(target);
-            SetStatus(changes.Count > 0 ? $"{description}: {changes.Sum(c => c.Occurrences)} change(s) in {changes.Count} file(s)" : $"Renamed to {name}");
+            var done = verb == "Rename" ? $"Renamed to {name}" : $"Moved to {Path.GetRelativePath(Workspace.Root, newDir).Replace('\\', '/')}/";
+            SetStatus(changes.Count > 0 ? $"{description}: {changes.Sum(c => c.Occurrences)} change(s) in {changes.Count} file(s)" : done);
+            return true;
         }
-        catch (Exception ex) { MessageDialog.Show("Rename", ex.Message); }
+        catch (Exception ex) { MessageDialog.Show(verb, ex.Message); return false; }
     }
 
     private void Delete_Click(object sender, RoutedEventArgs e)

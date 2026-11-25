@@ -77,6 +77,22 @@ public sealed class FileNode : INotifyPropertyChanged
 
     private bool _isMultiSelected;
 
+    private bool _isDropTarget, _isCut;
+
+    /// <summary>The directory files are dragged over.</summary>
+    public bool IsDropTarget
+    {
+        get => _isDropTarget;
+        set { if (_isDropTarget != value) { _isDropTarget = value; OnChanged(); } }
+    }
+
+    /// <summary>Cut (Ctrl+X) and not pasted yet: shown dimmed.</summary>
+    public bool IsCut
+    {
+        get => _isCut;
+        set { if (_isCut != value) { _isCut = value; OnChanged(); } }
+    }
+
     /// <summary>Part of a Ctrl/Shift+click multi-selection.</summary>
     public bool IsMultiSelected
     {

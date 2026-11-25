@@ -297,6 +297,55 @@ if (args.Length == 3 && args[0] == "--render")
                 }
                 continue;
             }
+            if (onlyWhat == "tree")
+            {
+                // project tree: move a PHP class to another directory (namespace + use updated), copy files
+                void Ok(string name, bool ok, string detail = "") => Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}{(ok || detail.Length == 0 ? "" : "  → " + detail.Replace("\n", "⏎"))}");
+                void Later2(double seconds, Action a)
+                {
+                    var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+                    timer.Tick += (_, _) => { timer.Stop(); try { a(); } catch (Exception ex) { Console.WriteLine("FAIL  tree exception: " + ex); } };
+                    timer.Start();
+                }
+                var treeProject = Path.GetFullPath(project);
+                var v5 = Path.Combine(treeProject, "src", "V5");
+                Directory.CreateDirectory(Path.Combine(v5, "A"));
+                Directory.CreateDirectory(Path.Combine(v5, "B"));
+                File.WriteAllText(Path.Combine(v5, "A", "Foo.php"), "<?php\nnamespace App\\V5\\A;\n\nclass Foo\n{\n}\n");
+                File.WriteAllText(Path.Combine(v5, "User.php"), "<?php\nnamespace App\\V5;\n\nuse App\\V5\\A\\Foo;\n\nclass User\n{\n    public function f(Foo $foo): void {}\n}\n");
+                var tw = new NeoIDE.MainWindow();
+                try
+                {
+                    Snap(tw, $"v2-tree-{tn0}", 1200, 760, () =>
+                    {
+                        tw.OpenProject(treeProject);
+                        Later2(4, () =>
+                        {
+                            tw.SelectInProjectForPreview(Path.Combine(v5, "A", "Foo.php"));
+                            tw.DropForPreview(new[] { Path.Combine(v5, "A", "Foo.php") }, Path.Combine(v5, "B"), copy: false);
+                            var moved = Path.Combine(v5, "B", "Foo.php");
+                            Ok("drag and drop: the file is moved", File.Exists(moved) && !File.Exists(Path.Combine(v5, "A", "Foo.php")));
+                            Ok("drag and drop: the class gets the namespace of its new directory", File.Exists(moved) && File.ReadAllText(moved).Contains("namespace App\\V5\\B;"), File.Exists(moved) ? File.ReadAllText(moved) : "");
+                            Ok("drag and drop: the use statements are updated", File.ReadAllText(Path.Combine(v5, "User.php")).Contains("use App\\V5\\B\\Foo;"), File.ReadAllText(Path.Combine(v5, "User.php")));
+                            tw.DropForPreview(new[] { moved, Path.Combine(v5, "User.php") }, Path.Combine(v5, "B"), copy: true);
+                            var copy = Path.Combine(v5, "B", "Foo2.php");
+                            Ok("copy next to the original: new name, class renamed", File.Exists(copy) && File.ReadAllText(copy).Contains("class Foo2") && File.Exists(moved), File.Exists(copy) ? File.ReadAllText(copy) : string.Join(",", Directory.GetFiles(Path.Combine(v5, "B"))));
+                            var userCopy = Path.Combine(v5, "B", "User.php");
+                            Ok("copy into another directory: namespace of the directory", File.Exists(userCopy) && File.ReadAllText(userCopy).Contains("namespace App\\V5\\B;") && File.ReadAllText(Path.Combine(v5, "User.php")).Contains("namespace App\\V5;"));
+                            tw.DropForPreview(new[] { Path.Combine(v5, "A") }, Path.Combine(v5, "B"), copy: false);
+                            Ok("drag and drop: a directory is moved", Directory.Exists(Path.Combine(v5, "B", "A")) && !Directory.Exists(Path.Combine(v5, "A")));
+                            tw.SelectInProjectForPreview(Path.Combine(v5, "B", "Foo2.php"));
+                        });
+                    });
+                    Ok("unique names", NeoIDE.MainWindow.UniqueName(Path.Combine(v5, "B"), "Foo.php") == "Foo3.php");
+                }
+                finally
+                {
+                    tw.Close();
+                    try { Directory.Delete(v5, true); } catch { }
+                }
+                continue;
+            }
             if (onlyWhat == "inspections")
             {
                 // greyed unused symbols, undefined members underlined, usages after the methods

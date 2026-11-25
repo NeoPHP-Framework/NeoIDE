@@ -452,6 +452,10 @@
                                         <MenuItem Header="Stylesheet" Tag=".css" Click="NewTypedFile_Click"/>
                                     </MenuItem>
                                     <Separator/>
+                                    <MenuItem Header="Cut" InputGestureText="Ctrl+X" Click="TreeCut_Click"/>
+                                    <MenuItem Header="Copy" InputGestureText="Ctrl+C" Click="TreeCopy_Click"/>
+                                    <MenuItem Header="Paste" InputGestureText="Ctrl+V" Click="TreePaste_Click"/>
+                                    <Separator/>
                                     <MenuItem Header="Rename…" InputGestureText="Shift+F6" Click="Rename_Click"/>
                                     <MenuItem Header="Delete…" InputGestureText="Delete" Click="Delete_Click"/>
                                     <Separator/>

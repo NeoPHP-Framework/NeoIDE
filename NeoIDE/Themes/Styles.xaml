@@ -470,6 +470,14 @@
                         <DataTrigger Binding="{Binding IsMultiSelected}" Value="True">
                             <Setter TargetName="row" Property="Background" Value="{DynamicResource SelectedBg}"/>
                         </DataTrigger>
+                        <DataTrigger Binding="{Binding IsCut}" Value="True">
+                            <Setter TargetName="row" Property="Opacity" Value="0.5"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsDropTarget}" Value="True">
+                            <Setter TargetName="row" Property="Background" Value="{DynamicResource SelectedBg}"/>
+                            <Setter TargetName="row" Property="BorderBrush" Value="{DynamicResource Accent}"/>
+                            <Setter TargetName="row" Property="BorderThickness" Value="1"/>
+                        </DataTrigger>
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
                                 <Condition Property="IsSelected" Value="True"/>
