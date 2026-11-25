@@ -581,6 +581,18 @@ var code = head + "class X {}";
 var (name, edit) = ImportManager.PrepareClassReference(code, PhpParser.Parse(code), "App\\Kernel");
 Check("use statement inserted sorted", edit != null && name == "Kernel" && code.Insert(edit.Value.Offset, edit.Value.Text).Contains("use App\\Kernel;\nuse NeoPHP"), edit?.Text ?? "null");
 
+// same short name as the class of the file: use ... as alias (a plain "use" would be a fatal error), never the FQN
+var clash = "<?php\nnamespace App\\Website;\n\nuse NeoPHP\\Package\\Orm\\Contract\\EntityManagerInterface;\n\nclass Kernel\n{\n    public function f() { return $this->em->getRepository(Ker";
+var clashRes = completion.Complete(clash, clash.Length, Path.Combine(root, "src", "Website", "Kernel.php"), false);
+var clashEntry = clashRes.Entries.FirstOrDefault(e => e.Label == "Kernel" && e.ImportFqn == "App\\Kernel");
+var (clashName, clashEdit) = ImportManager.PrepareClassReference(clash, PhpParser.Parse(clash), "App\\Kernel");
+Check("import of a class with the same name as the file's class: aliased use",
+    clashEntry?.Insert == "KernelApp" && clashName == "KernelApp" && clashEdit?.Text.Contains("use App\\Kernel as KernelApp;") == true,
+    $"{clashEntry?.Insert} {clashName} {clashEdit?.Text}");
+var clash2 = "<?php\nnamespace App\\Website;\n\nuse App\\Other\\Kernel;\n\nclass X {}";
+var (clash2Name, clash2Edit) = ImportManager.PrepareClassReference(clash2, PhpParser.Parse(clash2), "App\\Kernel");
+Check("import clashing with another import: aliased use", clash2Name == "KernelApp" && clash2Edit?.Text.Contains("use App\\Kernel as KernelApp;") == true, $"{clash2Name} {clash2Edit?.Text}");
+
 var c2 = head + "class X { public function a(): Response {} }";
 var unused = ImportManager.FindUnused(c2, PhpParser.Parse(c2));
 Check("unused import detection", unused.Count == 1 && unused[0].Alias == "AbstractController", string.Join(",", unused.Select(u => u.Alias)));

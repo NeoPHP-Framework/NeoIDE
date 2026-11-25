@@ -24,17 +24,42 @@ public static class ImportManager
 
         // same namespace: no import needed (unless an import shadows the short name)
         var aliasConflict = info.Uses.FirstOrDefault(u => u.Kind == "class" && string.Equals(u.Alias, shortName, StringComparison.OrdinalIgnoreCase));
-        if (string.Equals(ns, info.Namespace, StringComparison.OrdinalIgnoreCase))
-            return aliasConflict == null ? (shortName, null) : ("\\" + fqn, null);
-
-        // a class of the current namespace or another import uses the same short name
-        if (aliasConflict != null || info.Classes.Any(c => string.Equals(c.Name, shortName, StringComparison.OrdinalIgnoreCase)))
-            return ("\\" + fqn, null);
+        if (string.Equals(ns, info.Namespace, StringComparison.OrdinalIgnoreCase) && aliasConflict == null)
+            return (shortName, null);
 
         // global class in a file without namespace
-        if (ns.Length == 0 && string.IsNullOrEmpty(info.Namespace)) return (shortName, null);
+        if (ns.Length == 0 && string.IsNullOrEmpty(info.Namespace) && aliasConflict == null && !DeclaresName(info, shortName)) return (shortName, null);
+
+        // a class of the file or another import already uses the short name ("use App\Entity\X;" in a class X is a
+        // fatal error): imported under an alias made from its namespace, like PhpStorm (use App\Entity\X as XEntity;)
+        if (aliasConflict != null || DeclaresName(info, shortName))
+        {
+            var alias = ChooseAlias(info, fqn, shortName);
+            return alias == null ? ("\\" + fqn, null) : (alias, BuildUseInsertion(text, info, $"use {fqn} as {alias};", fqn));
+        }
 
         return (shortName, BuildUseInsertion(text, info, $"use {fqn};", fqn));
+    }
+
+    private static bool DeclaresName(PhpFileInfo info, string name) =>
+        info.Classes.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private static bool NameTaken(PhpFileInfo info, string name) =>
+        DeclaresName(info, name) || info.Uses.Any(u => u.Kind == "class" && string.Equals(u.Alias, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>XEntity, EntityX (from the namespace segments, innermost first), then X2, X3…</summary>
+    private static string? ChooseAlias(PhpFileInfo info, string fqn, string shortName)
+    {
+        var segments = fqn.Split('\\')[..^1].Reverse().Where(s => s.Length > 0).ToList();
+        var candidates = new List<string>();
+        foreach (var seg in segments)
+        {
+            var cap = char.ToUpperInvariant(seg[0]) + seg[1..];
+            if (!shortName.EndsWith(cap, StringComparison.Ordinal)) candidates.Add(shortName + cap);
+            if (!shortName.StartsWith(cap, StringComparison.Ordinal)) candidates.Add(cap + shortName);
+        }
+        for (int i = 2; i < 10; i++) candidates.Add(shortName + i);
+        return candidates.FirstOrDefault(c => !NameTaken(info, c));
     }
 
     public static TextEdit BuildUseInsertion(string text, PhpFileInfo info, string statement, string sortKey)
