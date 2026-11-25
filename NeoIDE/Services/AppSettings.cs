@@ -60,6 +60,7 @@ public sealed class AppSettings
 
     // code analysis
     public bool LintWhileTyping { get; set; } = true;     // php -l on the buffer
+    public bool FormatOnSave { get; set; }               // Reformat Code on Ctrl+S
     public bool PhpStanOnSave { get; set; } = true;       // when vendor/phpstan is installed
     public int PhpStanLevel { get; set; } = 5;            // used when the project has no phpstan.neon
     public bool NeoChecks { get; set; } = true;           // unknown routes / templates / env variables

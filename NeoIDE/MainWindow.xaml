@@ -140,6 +140,9 @@
                         <MenuItem Header="Code Completion" InputGestureText="Ctrl+Space" Click="Completion_Click"/>
                         <MenuItem Header="Show Context Actions" InputGestureText="Alt+Enter" Click="QuickFix_Click"/>
                         <MenuItem Header="Optimize Imports" InputGestureText="Ctrl+Alt+O" Click="OptimizeImports_Click"/>
+                        <MenuItem Header="Reformat Code" InputGestureText="Ctrl+Alt+L" Click="Reformat_Click"/>
+                        <MenuItem x:Name="FormatOnSaveItem" Header="Reformat Code on Save" IsCheckable="True" Click="FormatOnSave_Click"/>
+                        <MenuItem Header="Install PHP-CS-Fixer (composer)" Click="InstallCsFixer_Click"/>
                         <Separator/>
                         <MenuItem Header="Next Problem" InputGestureText="F2" Click="NextProblem_Click"/>
                         <MenuItem Header="Previous Problem" InputGestureText="Shift+F2" Click="PreviousProblem_Click"/>

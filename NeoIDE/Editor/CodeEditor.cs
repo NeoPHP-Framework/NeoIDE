@@ -19,7 +19,7 @@ using ICSharpCode.AvalonEdit.Rendering;
 namespace NeoIDE.Editor;
 
 /// <summary>AvalonEdit based editor with PhpStorm behaviours (completion, imports, navigation, smart typing).</summary>
-public sealed class CodeEditor : TextEditor
+public sealed partial class CodeEditor : TextEditor
 {
     public string? FilePath { get; private set; }
     public string? Language { get; private set; }
@@ -376,6 +376,8 @@ public sealed class CodeEditor : TextEditor
             {
                 var marks = baseText != null ? ChangeMarkerMargin.Prepare(baseText, text) : null;
                 var neo = neoChecks ? NeoInsight.Check(text, language) : null;
+                if (neoChecks && language == "Twig") neo!.AddRange(TwigInsight.Check(text, path));
+                if (neoChecks && language == "PHP") neo!.AddRange(TemplateVariables.CheckPhpView(text, path!));
                 if (!php) return new AnalysisResult(marks, null, null, null, null, neo);
                 var info = PhpParser.Parse(text, path);
                 if (path != null && Workspace.Root != null) Workspace.Index.UpdateFromBuffer(info, path);
@@ -518,7 +520,13 @@ public sealed class CodeEditor : TextEditor
 
         if (!IsPhp)
         {
-            if (Language is "Twig" && c == '{' && CharAt(caret - 2) == '{') { }
+            // Twig: variables, attributes after ".", filters after "|", tags after "{%"
+            if (Language is "Twig" && _completion == null && !IsPreview)
+            {
+                var p = CharAt(caret - 2);
+                bool wordStart = (char.IsLetter(c) || c == '_') && !(char.IsLetterOrDigit(p) || p is '_' or '.');
+                if ((wordStart || c is '.' or '|') && TwigInsight.InExpression(Text, caret)) ShowCompletion(false);
+            }
             return;
         }
 
@@ -563,6 +571,7 @@ public sealed class CodeEditor : TextEditor
         if (key == Key.Y && mods == ModifierKeys.Control) { DeleteLine(); e.Handled = true; return; }
         if (key == Key.Oem2 && mods == ModifierKeys.Control || key == Key.Divide && mods == ModifierKeys.Control) { ToggleComment(); e.Handled = true; return; }
         if (key == Key.O && mods == (ModifierKeys.Control | ModifierKeys.Alt)) { OptimizeImports(); e.Handled = true; return; }
+        if (key == Key.L && mods == (ModifierKeys.Control | ModifierKeys.Alt)) { _ = ReformatAsync(); e.Handled = true; return; }
         if (key is Key.Up or Key.Down && mods == (ModifierKeys.Control | ModifierKeys.Shift)) { MoveLine(key == Key.Up ? -1 : 1); e.Handled = true; return; }
         if (key == Key.Escape && _completion == null) { _hoverTip.IsOpen = false; }
         if (key == Key.F2 && mods is ModifierKeys.None or ModifierKeys.Shift) { GoToProblem(mods == ModifierKeys.Shift ? -1 : 1); e.Handled = true; return; }
@@ -684,13 +693,24 @@ public sealed class CodeEditor : TextEditor
             entries = r.Entries.Select(e => e.Kind == EntryKind.Property && after.StartsWith(":")
                 ? new CompletionEntry { Label = e.Label, Insert = e.Label, Kind = e.Kind, Priority = e.Priority } : e).ToList();
         }
+        else if (Language == "Twig" && !IsPreview && TwigInsight.Complete(text, caret, FilePath) is { } twig)
+        {
+            start = twig.start;
+            entries = twig.entries;
+        }
         else if (IsPhp)
         {
             CompletionResult result;
-            try { result = Workspace.Completion.Complete(text, caret, FilePath, explicitInvoke); }
+            // PHP views: the variables given by render() (and $this, the Template) are declared before the buffer
+            var prelude = !IsPreview && TemplateVariables.IsPhpView(FilePath) ? TemplateVariables.PhpViewPrelude(FilePath!) : "";
+            try { result = Workspace.Completion.Complete(prelude + text, caret + prelude.Length, FilePath, explicitInvoke); }
             catch (Exception ex) { StatusMessage?.Invoke("Completion error: " + ex.Message); return; }
             entries = result.Entries;
-            start = result.ReplaceStart;
+            start = Math.Max(0, result.ReplaceStart - prelude.Length);
+            if (prelude.Length > 0 && start < text.Length && text[start] == '$')
+                foreach (var v in TemplateVariables.For(FilePath))
+                    if (entries.All(x => x.Label != "$" + v.Name))
+                        entries.Add(new CompletionEntry { Label = "$" + v.Name, Insert = "$" + v.Name, Kind = EntryKind.Variable, TypeText = PhpTypes.Short(v.Type), Tail = $"  {v.Source}", Priority = 10 });
         }
         else
         {
@@ -894,6 +914,7 @@ public sealed class CodeEditor : TextEditor
             opt.Click += (_, _) => OptimizeImports();
             menu.Items.Add(opt);
         }
+        AddTemplateQuickFixes(menu, caret);
         if (menu.Items.Count == 0) { StatusMessage?.Invoke("No quick fix available here"); return; }
         menu.IsOpen = true;
     }
@@ -1086,6 +1107,17 @@ public sealed class CodeEditor : TextEditor
             TextArea.TextView.Redraw();
             return;
         }
+        if (TemplateSymbolAt(offset) is { File: not null } sym)
+        {
+            if ((sym.Start, sym.Start + sym.Length) == _linkWord) return;
+            _linkWord = (sym.Start, sym.Start + sym.Length);
+            _link.Start = sym.Start;
+            _link.Length = sym.Length;
+            _link.Brush = ThemeManager.Brush("LinkFg");
+            Cursor = TextArea.Cursor = Cursors.Hand;
+            TextArea.TextView.Redraw();
+            return;
+        }
         if (!IsPhp) { ClearLink(); return; }
         int s = offset, e = offset;
         while (s > 0 && (PhpLexer.IsIdentPart(Document.GetCharAt(s - 1)) || Document.GetCharAt(s - 1) == '\\')) s--;
@@ -1130,6 +1162,11 @@ public sealed class CodeEditor : TextEditor
             else StatusMessage?.Invoke(NeoInsight.Problem(neo with { Checked = true }) ?? $"Cannot find '{neo.Value}'");
             return true;
         }
+        if (TemplateSymbolAt(offset) is { File: not null } sym)
+        {
+            NavigateRequested?.Invoke(sym.File, sym.Offset);
+            return true;
+        }
         if (!IsPhp) return false;
         SymbolTarget? target;
         try { target = Workspace.Insight.Resolve(Text, offset, FilePath); } catch { return false; }
@@ -1149,7 +1186,7 @@ public sealed class CodeEditor : TextEditor
         string? text = hits.Count > 0 ? string.Join("\n\n", hits.Select(m => m.Message).Distinct()) : null;
         if (text == null)
         {
-            try { text = NeoHover(offset); } catch { }
+            try { text = NeoHover(offset) ?? TemplateSymbolAt(offset)?.Description; } catch { }
         }
         if (text == null && IsPhp)
         {

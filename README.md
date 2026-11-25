@@ -9,6 +9,13 @@ The IDE of the [NeoPHP](https://github.com/NeoPHP-Framework) framework — a Php
   templates (`render`, `extend`, `include`, Twig `extends`), `.env` variables (`%env()%`, `$_ENV`), parameters (`%name%`)
   and services; gutter icons: route of an action (open in the browser), template rendered, controllers rendering a template,
   event of a listener
+- **Template variables** (PHP views and Twig): the variables given by `render()` / `compact()` with their type — completion of
+  `$post->` in a PHP view and of `post.` in Twig (getters as attribute names), filters, functions and tags, `{% for %}` /
+  `{% set %}` variables, Ctrl+click to the controller or the getter, hover, unknown attribute / variable not passed checks
+- **Quick fixes (Alt+Enter)**: import a class, implement methods, *did you mean* for routes, templates, .env variables,
+  parameters and Twig attributes, create a missing template, add a variable to `.env` / a parameter to `services.yaml`
+- **Reformat Code (Ctrl+Alt+L)**: PHP-CS-Fixer for PHP when installed (the project's `.php-cs-fixer.dist.php`, else PER-CS),
+  built-in re-indentation of PHP views, Twig, HTML, CSS, JS (alternative syntax, Twig blocks…), JSON; selection only, on save
 - **Live problems**: syntax check while typing (`php -l`), PHPStan on save and on the whole project (Code › Inspect Code),
   NeoPHP checks — underlined in the editor, error stripe, F2 / Shift+F2, Problems tool window (Alt+6)
 - **Xdebug debugger**: breakpoints (conditional), Run › Debug `bin/neo serve` / a neo command / a script, step over / into / out,

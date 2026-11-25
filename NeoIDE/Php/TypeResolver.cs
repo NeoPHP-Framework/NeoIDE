@@ -260,7 +260,7 @@ public sealed class TypeResolver
             case SegKind.New:
                 return "\\" + ResolveClassName(s.Text);
             case SegKind.Var:
-                if (s.Text == "$this") return _class != null ? "\\" + _class.Fqn : null;
+                if (s.Text == "$this") return _class != null ? "\\" + _class.Fqn : InferVariable("$this", end); // templates: /** @var Template $this */
                 if (next?.Op == "::") return null; // $obj::CONST - rare
                 return InferVariable(s.Text, end);
             case SegKind.Name:

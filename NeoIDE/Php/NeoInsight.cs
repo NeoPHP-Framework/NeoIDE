@@ -160,6 +160,9 @@ public static class NeoInsight
         return list;
     }
 
+    /// <summary>Existing names close to a faulty one (quick fix "Change to ...").</summary>
+    public static List<string> Suggestions(NeoRef r, int max = 3) => TwigInsight.Suggest(r.Value, Names(r.Kind), max);
+
     public static IReadOnlyList<string> Names(NeoRefKind kind) => kind switch
     {
         NeoRefKind.Route => NeoProject.RouteNames,

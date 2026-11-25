@@ -15,9 +15,10 @@ public sealed class ProcessRunner
     public event Action<int>? Exited;
 
     public static async Task<(int code, string stdout, string stderr)> RunAsync(
-        string exe, string args, string? workingDir = null, int timeoutMs = 60000)
+        string exe, string args, string? workingDir = null, int timeoutMs = 60000, IReadOnlyDictionary<string, string>? env = null)
     {
         var psi = CreateStartInfo(exe, args, workingDir);
+        if (env != null) foreach (var (k, v) in env) psi.Environment[k] = v;
         using var p = new Process { StartInfo = psi };
         var so = new StringBuilder();
         var se = new StringBuilder();

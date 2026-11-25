@@ -171,6 +171,108 @@ if (args.Length == 3 && args[0] == "--render")
                 Console.WriteLine("DBGP " + string.Join(" | ", dbgpCommands.Select(c => c.Split(" -- ")[0])));
                 continue;
             }
+            if (onlyWhat == "v21")
+            {
+                void Later(double seconds, Action a)
+                {
+                    var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(seconds) };
+                    timer.Tick += (_, _) => { timer.Stop(); try { a(); } catch (Exception ex) { Console.WriteLine("FAIL  v21 exception: " + ex); } };
+                    timer.Start();
+                }
+                void Verify(string name, bool ok, string detail = "") => Console.WriteLine($"{(ok ? "PASS" : "FAIL")}  {name}{(ok || detail.Length == 0 ? "" : "  → " + detail)}");
+                var fx = new Dictionary<string, string>
+                {
+                    ["src/Entity/V3Post.php"] = "<?php\nnamespace App\\Entity;\n\nclass V3Post\n{\n    public string $slug = '';\n    private string $title = '';\n    public function getTitle(): string { return $this->title; }\n    public function isPublished(): bool { return true; }\n    public function getAuthor(): V3Author { return new V3Author(); }\n}\n\nclass V3Author\n{\n    public function getName(): string { return ''; }\n}\n",
+                    ["src/Controller/V3TestController.php"] = "<?php\nnamespace App\\Controller;\n\nuse App\\Entity\\V3Post;\nuse NeoPHP\\Component\\Controller\\Contract\\AbstractController;\n\nclass V3TestController extends AbstractController\n{\n    public function show(V3Post $post)\n    {\n        return $this->render('v3/show.html.twig', ['post' => $post, 'count' => 3]);\n    }\n\n    public function list()\n    {\n        /** @var V3Post[] $posts */\n        $posts = [];\n        return $this->render('v3/list', ['posts' => $posts, 'title' => 'Posts']);\n    }\n\n    public function created()\n    {\n        return $this->render('v3/created');\n    }\n}\n",
+                    ["templates/v3/show.html.twig"] = "<article>\n    <h1>{{ post.title }}</h1>\n    <p class=\"meta\">by {{ post.author.name|upper }}{% if post.published %} · published{% endif %}</p>\n    <p>{{ post.titel }}</p>\n    <small>{{ count }} comments</small>\n</article>\n",
+                    ["templates/v3/list.php"] = "<?php $this->extend('base') ?>\n<?php $this->start('content') ?>\n<h1><?= $this->e($title) ?></h1>\n<ul>\n<?php foreach ($posts as $post): ?>\n<li>\n<a href=\"/posts/<?= $post->slug ?>\"><?= $this->e($post->getTitle()) ?></a>\n</li>\n<?php endforeach ?>\n</ul>\n<?php $this->stop() ?>\n",
+                };
+                var envFile = Path.Combine(project, ".env");
+                var envOriginal = File.ReadAllText(envFile);
+                foreach (var (rel, content) in fx)
+                {
+                    var full = Path.Combine(project, rel);
+                    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                    File.WriteAllText(full, content);
+                }
+                string P(string rel) => Path.GetFullPath(Path.Combine(project, rel));
+                try
+                {
+                    // 1. Twig: attribute check, quick fix, navigation
+                    var w1 = new NeoIDE.MainWindow();
+                    Snap(w1, $"v21-twig-{tn0}", 1500, 860, () =>
+                    {
+                        w1.OpenProject(project);
+                        Later(4, () =>
+                        {
+                            NeoIDE.Php.TemplateVariables.Invalidate();
+                            w1.OpenFile(P("templates/v3/show.html.twig"));
+                            w1.ShowToolWindowsForPreview("project", "problems");
+                        });
+                        Later(6.5, () =>
+                        {
+                            var ed = w1.EditorForPreview!;
+                            Verify("v21: Twig unknown attribute underlined in the editor", ed.Problems.Any(p => p.Message.Contains("Unknown attribute 'titel'")), string.Join(" | ", ed.Problems.Select(p => p.Message)));
+                            var at = ed.Text.IndexOf("titel") + 2;
+                            var fixes = ed.TemplateQuickFixes(at);
+                            Verify("v21: Alt+Enter on a Twig typo offers the attribute", fixes.Any(f => f.label == "Change to 'title'"), string.Join(", ", fixes.Select(f => f.label)));
+                            fixes.FirstOrDefault(f => f.label == "Change to 'title'").action?.Invoke();
+                            Verify("v21: the quick fix replaces the name", ed.Text.Contains("{{ post.title }}</p>") && !ed.Text.Contains("titel"));
+                            var sym = ed.TemplateSymbolAt(ed.Text.IndexOf("author") + 1);
+                            Verify("v21: Ctrl+click target of a Twig attribute", sym?.File?.EndsWith("V3Post.php") == true, sym?.Description ?? "null");
+                            // reintroduce the typo for the screenshot
+                            var i = ed.Text.IndexOf("{{ post.title }}</p>");
+                            ed.Document.Replace(i, "{{ post.title }}".Length, "{{ post.titel }}");
+                        });
+                    });
+                    w1.EditorForPreview?.Document.UndoStack.ClearAll();
+                    if (w1.EditorForPreview is { } e1) e1.Document.Text = fx["templates/v3/show.html.twig"];
+                    w1.Close();
+
+                    // 2. PHP view: reformat + variables; controller: create template quick fix
+                    var w2 = new NeoIDE.MainWindow();
+                    Snap(w2, $"v21-view-{tn0}", 1500, 860, () =>
+                    {
+                        w2.OpenProject(project);
+                        Later(4, () =>
+                        {
+                            NeoIDE.Php.TemplateVariables.Invalidate();
+                            w2.OpenFile(P("src/Controller/V3TestController.php"));
+                            var ctl = w2.EditorForPreview!;
+                            var fixes = ctl.TemplateQuickFixes(ctl.Text.IndexOf("v3/created") + 3);
+                            Verify("v21: Alt+Enter on an unknown template offers to create it", fixes.Any(f => f.label == "Create template 'v3/created'"), string.Join(", ", fixes.Select(f => f.label)));
+                            fixes.FirstOrDefault(f => f.label.StartsWith("Create template")).action?.Invoke();
+                            var created = P("templates/v3/created.php");
+                            Verify("v21: the template is created extending the layout", File.Exists(created) && File.ReadAllText(created).Contains("$this->extend('base')") && File.ReadAllText(created).Contains("start('content')"),
+                                File.Exists(created) ? File.ReadAllText(created) : "missing");
+                            var envName = "V21_TEST_VAR";
+                            ctl.AddEnvVariable(envName);
+                            Verify("v21: Add to .env appends the variable", File.ReadAllText(envFile).EndsWith(envName + "=\n") || File.ReadAllText(envFile).EndsWith(envName + "=\r\n"));
+                            File.WriteAllText(envFile, envOriginal);
+
+                            w2.OpenFile(P("templates/v3/list.php"));
+                            var view = w2.EditorForPreview!;
+                            var ok = view.ReformatAsync().GetAwaiter().GetResult();
+                            Verify("v21: Reformat Code re-indents the PHP view", ok && view.Text.Contains("\n    <?php foreach ($posts as $post): ?>\n        <li>\n            <a href") && view.Text.Contains("\n    <?php endforeach ?>\n</ul>"), view.Text);
+                            view.Document.UndoStack.Undo();
+                            Verify("v21: the reformat is one undo step", view.Text == fx["templates/v3/list.php"]);
+                            view.ReformatAsync().GetAwaiter().GetResult();
+                            var titleVar = view.TemplateSymbolAt(view.Text.IndexOf("$title") + 2);
+                            Verify("v21: $variable of a PHP view → render() of the controller", titleVar?.Description.Contains("V3TestController::list()") == true, titleVar?.Description ?? "null");
+                        });
+                    });
+                    if (w2.EditorForPreview is { } e2) { e2.Document.Text = fx["templates/v3/list.php"]; }
+                    w2.Close();
+                }
+                finally
+                {
+                    foreach (var rel in fx.Keys) try { File.Delete(Path.Combine(project, rel)); } catch { }
+                    try { File.Delete(P("templates/v3/created.php")); } catch { }
+                    try { Directory.Delete(Path.Combine(project, "templates", "v3")); } catch { }
+                    File.WriteAllText(envFile, envOriginal);
+                }
+                continue;
+            }
             if (onlyWhat == "packages")
             {
                 Workspace.Open(project);
@@ -781,6 +883,119 @@ try { Directory.Delete(repo, true); } catch { }
 
     // debugger: a fake Xdebug client speaks DBGp to the IDE
     await DbgpFakeClientTest();
+}
+
+// ---- 2.1: reformat, template variables, Twig intelligence, quick fix suggestions
+{
+    string Show(string s) => "\n" + s.Replace("\r", "");
+    var messyClass = "<?php\nnamespace App;\nclass A\n{\npublic function b(array $x): void\n{\nif ($x) {\nforeach ($x as $y) {\necho $y;\n}\n}\n$q = $this->db\n->where('a')\n->get();\nswitch ($x) {\ncase 1:\necho 1;\nbreak;\ndefault:\necho 2;\n}\n$s = \"multi\nline\";\n/**\n* doc\n*/\n$a = [\n'k' => [\n1,\n],\n];\n}\n}\n\n\n";
+    var expectedClass = "<?php\nnamespace App;\nclass A\n{\n    public function b(array $x): void\n    {\n        if ($x) {\n            foreach ($x as $y) {\n                echo $y;\n            }\n        }\n        $q = $this->db\n            ->where('a')\n            ->get();\n        switch ($x) {\n            case 1:\n                echo 1;\n                break;\n            default:\n                echo 2;\n        }\n        $s = \"multi\nline\";\n        /**\n         * doc\n         */\n        $a = [\n            'k' => [\n                1,\n            ],\n        ];\n    }\n}\n";
+    var gotClass = Reindenter.Reformat(messyClass, "PHP", "    ");
+    Check("reformat PHP: blocks, chains, switch cases, multi-line string, doc comment, arrays", gotClass == expectedClass, Show(gotClass));
+    var messyView = "<?php $this->extend('base') ?>\n<?php $this->start('content') ?>\n<ul>\n<?php foreach ($posts as $post): ?>\n<li>\n<?= $post->getTitle() ?>\n</li>\n<?php endforeach ?>\n</ul>\n<?php if ($x): ?>\n<p>a</p>\n<?php else: ?>\n<p>b</p>\n<?php endif ?>\n<img src=\"a.png\">\n<?php $this->stop() ?>\n";
+    var expectedView = "<?php $this->extend('base') ?>\n<?php $this->start('content') ?>\n<ul>\n    <?php foreach ($posts as $post): ?>\n        <li>\n            <?= $post->getTitle() ?>\n        </li>\n    <?php endforeach ?>\n</ul>\n<?php if ($x): ?>\n    <p>a</p>\n<?php else: ?>\n    <p>b</p>\n<?php endif ?>\n<img src=\"a.png\">\n<?php $this->stop() ?>\n";
+    var gotView = Reindenter.Reformat(messyView, "PHP", "    ");
+    Check("reformat PHP view: HTML elements, alternative syntax, else, void tags", gotView == expectedView, Show(gotView));
+    var messyTwig = "{% extends 'base.html.twig' %}\n{% block body %}\n<ul>\n{% for p in posts %}\n<li>{{ p.title }}</li>\n{% else %}\n<li>none</li>\n{% endfor %}\n</ul>\n{% set x = 1 %}\n{% block title 'Short' %}\n{# a\ncomment #}\n{% endblock %}\n";
+    var expectedTwig = "{% extends 'base.html.twig' %}\n{% block body %}\n    <ul>\n        {% for p in posts %}\n            <li>{{ p.title }}</li>\n        {% else %}\n            <li>none</li>\n        {% endfor %}\n    </ul>\n    {% set x = 1 %}\n    {% block title 'Short' %}\n    {# a\n    comment #}\n{% endblock %}\n";
+    var gotTwig = Reindenter.Reformat(messyTwig, "Twig", "    ");
+    Check("reformat Twig: blocks, for / else, short block, set, comment", gotTwig == expectedTwig, Show(gotTwig));
+    var gotCss = Reindenter.Reformat("a {\ncolor: red;   \n}\n@media (x) {\nb { c: d; }\n}", "CSS", "    ");
+    Check("reformat CSS", gotCss == "a {\n    color: red;\n}\n@media (x) {\n    b { c: d; }\n}\n", Show(gotCss));
+    var gotYaml = Reindenter.Reformat("a:\r\n  b: 1   \r\n", "YAML", "    ");
+    Check("reformat YAML: whitespace only, CRLF kept", gotYaml == "a:\r\n  b: 1\r\n", Show(gotYaml));
+    var gotRange = Reindenter.Reformat("<?php\nif ($a) {\necho 1;\necho 2;\n}\n", "PHP", "    ", 3, 3);
+    Check("reformat selected lines only", gotRange == "<?php\nif ($a) {\n    echo 1;\necho 2;\n}\n", Show(gotRange));
+    var json = CodeFormatter.FormatJson("{\"a\":[1,2],\"b\":{\"c\":\"/x é\"}}", 4);
+    Check("reformat JSON (order, unescaped / and accents)", json == "{\n    \"a\": [\n        1,\n        2\n    ],\n    \"b\": {\n        \"c\": \"/x é\"\n    }\n}\n", json ?? "null");
+    Check("reformat JSON: invalid JSON is left alone", CodeFormatter.FormatJson("{\"a\":", 4) == null);
+
+    // template variables: fixture controller / entity / templates in the e2e project (removed afterwards)
+    var fixtures = new Dictionary<string, string>
+    {
+        ["src/Entity/V3Post.php"] = "<?php\nnamespace App\\Entity;\n\nclass V3Post\n{\n    public string $slug = '';\n    private string $title = '';\n    public function getTitle(): string { return $this->title; }\n    public function isPublished(): bool { return true; }\n    public function getAuthor(): V3Author { return new V3Author(); }\n}\n\nclass V3Author\n{\n    public function getName(): string { return ''; }\n}\n",
+        ["src/Controller/V3TestController.php"] = "<?php\nnamespace App\\Controller;\n\nuse App\\Entity\\V3Post;\nuse NeoPHP\\Component\\Controller\\Contract\\AbstractController;\n\nclass V3TestController extends AbstractController\n{\n    public function show(V3Post $post)\n    {\n        return $this->render('v3/show.html.twig', ['post' => $post, 'count' => 3]);\n    }\n\n    public function list()\n    {\n        /** @var V3Post[] $posts */\n        $posts = [];\n        $title = 'All';\n        return $this->render('v3/list', compact('posts', 'title'));\n    }\n\n    public function loop()\n    {\n        /** @var V3Post[] $posts */\n        $posts = [];\n        return $this->render('v3/loop.html.twig', ['posts' => $posts]);\n    }\n}\n",
+        ["templates/v3/show.html.twig"] = "<h1>{{ post.title }}</h1>\n<p>{{ post.titel }} {{ post.author.name|upper }} {{ post.slug }} {{ count }}</p>\n{{ post. }}\n",
+        ["templates/v3/loop.html.twig"] = "{% for p in posts %}\n  {{ p.author.nam }}\n{% endfor %}\n",
+        ["templates/v3/list.php"] = "<?php $this->extend('base') ?>\n<?php foreach ($posts as $post): ?>\n<h2><?= $this->e($post->getTitle()) ?></h2>\n<?php endforeach ?>\n<p><?= $title ?> <?= $missing ?? '' ?> <?= $unknown ?></p>\n",
+    };
+    var e2e = args[0];
+    await Workspace.Index.BuildAsync(e2e, Workspace.PhpExe); // the debugger test reopened the project (empty index)
+    try
+    {
+        foreach (var (rel, content) in fixtures)
+        {
+            var full = Path.Combine(e2e, rel);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllText(full, content);
+            if (full.EndsWith(".php") && rel.StartsWith("src")) Workspace.Index.UpdateFile(full);
+        }
+        NeoProject.Build(e2e);
+        TemplateVariables.Invalidate();
+        string F(string rel) => Path.GetFullPath(Path.Combine(e2e, rel));
+        var showVars = TemplateVariables.For(F("templates/v3/show.html.twig"));
+        Check("template variables of render(): names, types and source",
+            showVars.Any(v => v.Name == "post" && v.Type == "\\App\\Entity\\V3Post" && v.Source == "V3TestController::show()") && showVars.Any(v => v.Name == "count"),
+            string.Join(", ", showVars.Select(v => $"{v.Name}:{v.Type}@{v.Source}")));
+        var listVars = TemplateVariables.For(F("templates/v3/list.php"));
+        Check("template variables of compact()", listVars.Any(v => v.Name == "posts" && v.Type == "\\App\\Entity\\V3Post[]") && listVars.Any(v => v.Name == "title"),
+            string.Join(", ", listVars.Select(v => $"{v.Name}:{v.Type}")));
+        var baseVars = TemplateVariables.For(F("templates/base.php"));
+        Check("a layout receives the variables of the views extending it", baseVars.Any(v => v.Name == "posts") && baseVars.Any(v => v.Name == "title"), string.Join(", ", baseVars.Select(v => v.Name)));
+
+        var show = fixtures["templates/v3/show.html.twig"];
+        var showFile = F("templates/v3/show.html.twig");
+        var dot = show.IndexOf("{{ post. }}") + "{{ post.".Length;
+        var members = TwigInsight.Complete(show, dot, showFile);
+        var labels = members?.entries.Select(e => e.Label).ToList() ?? new();
+        Check("Twig completion of attributes (getters as names)", labels.Contains("title") && labels.Contains("published") && labels.Contains("slug") && labels.Contains("author") && !labels.Contains("getTitle"),
+            string.Join(",", labels));
+        var varsAt = TwigInsight.Complete(show, show.IndexOf("{{ count") + 3, showFile);
+        Check("Twig completion of the template variables", varsAt?.entries.Any(e => e.Label == "post" && e.TypeText == "V3Post") == true && varsAt.Value.entries.Any(e => e.Label == "count"),
+            string.Join(",", varsAt?.entries.Take(10).Select(e => e.Label + ":" + e.TypeText) ?? Array.Empty<string>()));
+        var filters = TwigInsight.Complete(show, show.IndexOf("|upper") + 1, showFile);
+        Check("Twig completion of filters after |", filters?.entries.Any(e => e.Label == "upper") == true && filters.Value.entries.All(e => e.TypeText == "filter"));
+        var twigProblems = TwigInsight.Problems(show, showFile);
+        Check("Twig check: unknown attribute with suggestion, valid chains accepted",
+            twigProblems.Count == 1 && twigProblems[0].Message.Contains("Unknown attribute 'titel' of V3Post") && twigProblems[0].Suggestions.FirstOrDefault() == "title",
+            string.Join(" | ", twigProblems.Select(p => p.Message)));
+        var symbol = TwigInsight.SymbolAt(show, show.IndexOf("post.title") + 6, showFile);
+        Check("Twig navigation: attribute → getter of the entity", symbol?.File?.EndsWith("V3Post.php") == true && symbol.Description.Contains("getTitle"), symbol?.Description ?? "null");
+        var varSymbol = TwigInsight.SymbolAt(show, show.IndexOf("post.title") + 1, showFile);
+        Check("Twig navigation: variable → render() of the controller", varSymbol?.File?.EndsWith("V3TestController.php") == true && varSymbol.Description.Contains("V3TestController::show()"), varSymbol?.Description ?? "null");
+        var loop = fixtures["templates/v3/loop.html.twig"];
+        var loopProblems = TwigInsight.Problems(loop, F("templates/v3/loop.html.twig"));
+        Check("Twig {% for %}: the element type of the collection", loopProblems.Count == 1 && loopProblems[0].Message.Contains("'nam' of V3Author") && loopProblems[0].Suggestions.Contains("name"),
+            string.Join(" | ", loopProblems.Select(p => p.Message)));
+
+        var list = fixtures["templates/v3/list.php"];
+        var listFile = F("templates/v3/list.php");
+        var hints = TemplateVariables.CheckPhpView(list, listFile);
+        Check("PHP view check: variable not passed (guarded / loop / passed ones accepted)",
+            hints.Count == 1 && hints[0].Message.Contains("'$unknown'") && hints[0].Severity == NeoIDE.Services.Diagnostics.Severity.Info, string.Join(" | ", hints.Select(h => h.Message)));
+        var prelude = TemplateVariables.PhpViewPrelude(listFile);
+        var arrow = list.IndexOf("$post->getTitle") + "$post->".Length;
+        var viewComp = Workspace.Completion.Complete(prelude + list, arrow + prelude.Length, listFile, true);
+        Check("PHP view completion: $post-> of a foreach over a render() variable", viewComp.Entries.Any(e => e.Label.StartsWith("getTitle")), string.Join(",", viewComp.Entries.Take(12).Select(e => e.Label)));
+        var thisArrow = list.IndexOf("$this->e(") + "$this->".Length;
+        var thisComp = Workspace.Completion.Complete(prelude + list, thisArrow + prelude.Length, listFile, true);
+        Check("PHP view completion: $this-> is the Template", thisComp.Entries.Any(e => e.Label.StartsWith("extend")) && thisComp.Entries.Any(e => e.Label.StartsWith("section")), string.Join(",", thisComp.Entries.Take(12).Select(e => e.Label)));
+        Check("PHP view: $variable resolves to the render() call", TemplateVariables.PhpViewVariableAt(list, list.IndexOf("$title") + 2, listFile)?.Source == "V3TestController::list()");
+
+        var neoRef = NeoInsight.All("<?php $this->redirectToRoute('hom');", "PHP")[0];
+        Check("quick fix suggestions for NeoPHP names", NeoInsight.Suggestions(neoRef).FirstOrDefault() == "home", string.Join(",", NeoInsight.Suggestions(neoRef)));
+    }
+    finally
+    {
+        foreach (var rel in fixtures.Keys)
+        {
+            var full = Path.Combine(e2e, rel);
+            try { File.Delete(full); } catch { }
+            if (rel.StartsWith("src")) Workspace.Index.RemoveFile(full);
+        }
+        try { Directory.Delete(Path.Combine(e2e, "templates", "v3")); } catch { }
+        NeoProject.Build(e2e);
+    }
 }
 
 Console.WriteLine(failures == 0 ? "\nALL PASSED" : $"\n{failures} FAILURE(S)");

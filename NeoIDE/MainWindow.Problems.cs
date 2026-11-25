@@ -30,6 +30,7 @@ public partial class MainWindow
         LintItem.IsChecked = AppSettings.Current.LintWhileTyping;
         PhpStanOnSaveItem.IsChecked = AppSettings.Current.PhpStanOnSave;
         NeoChecksItem.IsChecked = AppSettings.Current.NeoChecks;
+        FormatOnSaveItem.IsChecked = AppSettings.Current.FormatOnSave;
         RefreshProblemsStatus();
     }
 
@@ -97,6 +98,31 @@ public partial class MainWindow
         AppSettings.Current.LintWhileTyping = LintItem.IsChecked;
         AppSettings.Current.Save();
         if (!LintItem.IsChecked) foreach (var t in _tabs) if (t.Editor?.FilePath is { } f) DiagnosticsStore.Set(f, "php", Array.Empty<Diagnostic>());
+    }
+
+    private void FormatOnSave_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettings.Current.FormatOnSave = FormatOnSaveItem.IsChecked;
+        AppSettings.Current.Save();
+    }
+
+    private async void InstallCsFixer_Click(object sender, RoutedEventArgs e)
+    {
+        if (Workspace.Root == null) { SetStatus("Open a project first"); return; }
+        if (CodeFormatter.PhpCsFixerBinary(Workspace.Root) != null) { SetStatus("PHP-CS-Fixer is already installed: Ctrl+Alt+L reformats the PHP files with it"); return; }
+        await RunComposer("require --dev friendsofphp/php-cs-fixer");
+    }
+
+    /// <summary>Ctrl+S: saves everything; with "Reformat Code on Save", the modified files are reformatted first.</summary>
+    private async void SaveAllFromKeyboard()
+    {
+        if (AppSettings.Current.FormatOnSave)
+            foreach (var t in _tabs.Where(t => t.Dirty && t.Editor != null).ToList())
+            {
+                try { await t.Editor!.ReformatAsync(); } catch { }
+            }
+        SaveAll();
+        SetStatus(AppSettings.Current.FormatOnSave ? "All files reformatted and saved" : "All files saved");
     }
 
     private void PhpStanOnSave_Click(object sender, RoutedEventArgs e)

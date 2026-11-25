@@ -321,7 +321,9 @@ public partial class MainWindow : Window, IIdeShell
         var ext = Path.GetExtension(path);
         var title = new TextBlock { Text = Path.GetFileName(path), VerticalAlignment = VerticalAlignment.Center };
         var header = BuildTabHeader(path, title, out var closeButton);
-        var tabItem = new TabItem { Header = header, Style = (Style)FindResource("EditorTabItem"), ToolTip = path };
+        // the path on the header only: a TabItem tooltip would also show over the whole editor
+        header.ToolTip = path;
+        var tabItem = new TabItem { Header = header, Style = (Style)FindResource("EditorTabItem") };
         EditorTab tab;
 
         if (ImageExt.Contains(ext))
@@ -1474,6 +1476,7 @@ public partial class MainWindow : Window, IIdeShell
     private void Completion_Click(object sender, RoutedEventArgs e) => CurrentEditor?.ShowCompletion(true);
     private void QuickFix_Click(object sender, RoutedEventArgs e) => CurrentEditor?.ShowQuickFixes();
     private void OptimizeImports_Click(object sender, RoutedEventArgs e) => CurrentEditor?.OptimizeImports();
+    private async void Reformat_Click(object sender, RoutedEventArgs e) { if (CurrentEditor is { } ed) await ed.ReformatAsync(); }
     private void Undo_Click(object sender, RoutedEventArgs e) => CurrentEditor?.Undo();
     private void Redo_Click(object sender, RoutedEventArgs e) => CurrentEditor?.Redo();
     private void Find_Click(object sender, RoutedEventArgs e) => ApplicationCommands.Find.Execute(null, CurrentEditor?.TextArea);
@@ -1583,7 +1586,7 @@ public partial class MainWindow : Window, IIdeShell
             (Key.D5, ModifierKeys.Alt) => Handle(() => ShowBottom(IsBottomVisible("debug") ? null : "debug")),
             (Key.D6, ModifierKeys.Alt) => Handle(() => ShowBottom(IsBottomVisible("problems") ? null : "problems")),
             (Key.F9, ModifierKeys.Shift) => Handle(() => DebugServer_Click(this, e)),
-            (Key.S, ModifierKeys.Control) => Handle(() => { SaveAll(); SetStatus("All files saved"); }),
+            (Key.S, ModifierKeys.Control) => Handle(SaveAllFromKeyboard),
             (Key.K, ModifierKeys.Control) => Handle(() => GitCommitPanel_Click(this, e)),
             (Key.K, ModifierKeys.Control | ModifierKeys.Shift) => Handle(() => GitPush_Click(this, e)),
             (Key.T, ModifierKeys.Control) => Handle(() => GitPull_Click(this, e)),
@@ -1789,7 +1792,7 @@ public partial class MainWindow : Window, IIdeShell
 
     private void Shortcuts_Click(object sender, RoutedEventArgs e) => MessageDialog.Show("Keyboard shortcuts (PhpStorm keymap)",
         "Double Shift   Search Everywhere\nCtrl+N   Go to class\nCtrl+Shift+N   Go to file\nCtrl+B / Ctrl+Click   Go to declaration\n" +
-        "Ctrl+Space   Completion\nAlt+Enter   Quick fixes (import class)\nCtrl+Alt+O   Optimize imports\nCtrl+D   Duplicate line\n" +
+        "Ctrl+Space   Completion\nAlt+Enter   Quick fixes (import, create template, did you mean…)\nCtrl+Alt+O   Optimize imports\nCtrl+Alt+L   Reformat code\nCtrl+D   Duplicate line\n" +
         "Ctrl+Y   Delete line\nCtrl+/   Comment line\nCtrl+Shift+↑/↓   Move line\nCtrl+F   Find   ·   Ctrl+Shift+F   Find in files\n" +
         "Alt+Insert   New file\nAlt+1   Project   ·   Alt+7   Structure\nAlt+F12   Terminal   ·   Alt+4   Run\n" +
         "Shift+F10   php bin/neo serve   ·   Ctrl+F2   Stop\nCtrl+Shift+X   Run a neo command\nCtrl+Alt+S   Settings\n\n" +
