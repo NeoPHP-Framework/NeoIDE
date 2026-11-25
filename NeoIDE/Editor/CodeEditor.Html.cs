@@ -65,8 +65,9 @@ public sealed partial class CodeEditor
         var prev = caret >= 2 ? text[caret - 2] : '\0';
         var show = ctx.Kind switch
         {
-            HtmlContextKind.TagName => c == '<' || char.IsLetter(c) && prev == '<',
-            HtmlContextKind.AttributeName => c == ' ' || char.IsLetter(c) && char.IsWhiteSpace(prev),
+            // any letter of the name (after Escape / Backspace, typing again reopens the list)
+            HtmlContextKind.TagName => c == '<' || char.IsLetterOrDigit(c),
+            HtmlContextKind.AttributeName => c == ' ' || char.IsLetter(c) || c == '-',
             HtmlContextKind.AttributeValue => c is '"' or '\'',
             _ => false,
         };

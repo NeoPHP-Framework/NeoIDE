@@ -82,6 +82,7 @@ public sealed partial class CodeEditor : TextEditor
         TextArea.Caret.PositionChanged += (_, _) => UpdateBrackets();
         PreviewKeyDown += OnPreviewKeyDown;
         PreviewMouseLeftButtonDown += OnPreviewMouseDown;
+        InitInspections();
         MouseHover += OnMouseHover;
         MouseHoverStopped += (_, _) => { if (!_hoverTip.IsMouseOver) _hoverTip.IsOpen = false; };
         MouseLeave += (_, _) => Dispatcher.BeginInvoke(() => { if (!_hoverTip.IsMouseOver) _hoverTip.IsOpen = false; }, DispatcherPriority.Background);
@@ -285,6 +286,7 @@ public sealed partial class CodeEditor : TextEditor
         _breakpointMargin.Sync();
         UpdateFoldings();
         Analyze();
+        RefreshUsages();
     }
 
     // ------------------------------------------------------------------ theme
@@ -353,7 +355,7 @@ public sealed partial class CodeEditor : TextEditor
 
     private sealed record AnalysisResult(object? Marks, List<PhpUse>? Unused, List<(int, int)>? Dim,
         List<(int start, int length, string name, List<PhpClass> candidates)>? Unresolved, List<MissingMethods>? Missing,
-        List<Squiggle>? Neo = null);
+        List<Squiggle>? Neo = null, List<UnusedSymbol>? UnusedSymbols = null, List<UndefinedMember>? Undefined = null);
 
     /// <summary>
     /// Background analysis (parse, imports, unknown classes, missing methods, VCS markers):
@@ -389,7 +391,11 @@ public sealed partial class CodeEditor : TextEditor
                     if (items.All(unused.Contains)) dim.Add((items[0].StatementStart, items[0].StatementEnd));
                 }
                 var insight = Workspace.Insight;
-                return new AnalysisResult(marks, unused, dim, insight.FindUnresolvedClasses(text, info), insight.FindMissingImplementations(info), neo);
+                List<UnusedSymbol>? unusedSymbols = null;
+                List<UndefinedMember>? undefined = null;
+                try { unusedSymbols = CodeInspector.FindUnused(text, info); } catch { }
+                try { if (Workspace.Index.IsReady) undefined = CodeInspector.FindUndefined(text, info); } catch { }
+                return new AnalysisResult(marks, unused, dim, insight.FindUnresolvedClasses(text, info), insight.FindMissingImplementations(info), neo, unusedSymbols, undefined);
             });
         }
         catch { return; }
@@ -406,7 +412,14 @@ public sealed partial class CodeEditor : TextEditor
             return;
         }
         _unusedUses = result.Unused!;
-        _dim.Segments = result.Dim!;
+        _unusedSymbols = result.UnusedSymbols ?? new List<UnusedSymbol>();
+        _undefined = result.Undefined ?? new List<UndefinedMember>();
+        var dimSegments = result.Dim!.Concat(_unusedSymbols.Select(u => (u.Start, u.Start + u.Length))).ToList();
+        if (!dimSegments.SequenceEqual(_dim.Segments))
+        {
+            _dim.Segments = dimSegments;
+            TextArea.TextView.Redraw(); // the colours of the text changed: the visual lines are rebuilt
+        }
         _unresolved = result.Unresolved!;
         _missing = result.Missing!;
         var markers = _unresolved.Select(u => new Squiggle(u.start, u.length, u.candidates.Count > 0
@@ -415,6 +428,7 @@ public sealed partial class CodeEditor : TextEditor
             markers.Add(new Squiggle(m.NameOffset, m.NameLength,
                 $"Class '{m.ClassName}' must implement {m.Methods.Count} method(s): {string.Join(", ", m.Methods.Take(6).Select(x => $"{x.Name}() of {x.DeclaringClass.Split('\\').Last()}"))}{(m.Methods.Count > 6 ? "…" : "")} — Alt+Enter / Ctrl+I to add them", Severity.Error));
         markers.AddRange(result.Neo ?? new List<Squiggle>());
+        markers.AddRange(_undefined.Select(u => new Squiggle(u.Start, u.Length, u.Message, u.Severity)));
         _ideMarkers = markers;
         if (path != null) PublishIdeMarkers(path);
         ComposeMarkers();
@@ -515,8 +529,10 @@ public sealed partial class CodeEditor : TextEditor
         if (_completion == null && (Language == "CSS" || Language is "HTML" or "Twig" or "PHP" && CssRegion(Text, caret) != null))
         {
             var p = CharAt(caret - 2);
-            bool wordStart = (char.IsLetter(c) || c == '-') && !(char.IsLetterOrDigit(p) || p is '-' or '_' or '#' or '$');
-            if (wordStart || c is ':' or '@' or '!' || c == '.' && !char.IsDigit(p) || c == '-' && p == '-' || c == '#' && Language == "CSS")
+            // any letter of a word (not only the first one: after Escape / Backspace, typing again reopens the list)
+            var ws = WordStart(caret, "-_");
+            bool inWord = (char.IsLetter(c) || c == '-') && (char.IsLetter(CharAt(ws)) || CharAt(ws) == '-') && CharAt(ws - 1) is not ('#' or '$');
+            if (inWord || c is ':' or '@' or '!' || c == '.' && !char.IsDigit(p) || c == '-' && p == '-' || c == '#' && Language == "CSS")
                 ShowCompletion(false);
             return;
         }
@@ -526,9 +542,9 @@ public sealed partial class CodeEditor : TextEditor
             // Twig: variables, attributes after ".", filters after "|", tags after "{%"
             if (Language is "Twig" && _completion == null && !IsPreview)
             {
-                var p = CharAt(caret - 2);
-                bool wordStart = (char.IsLetter(c) || c == '_') && !(char.IsLetterOrDigit(p) || p is '_' or '.');
-                if ((wordStart || c is '.' or '|') && TwigInsight.InExpression(Text, caret)) ShowCompletion(false);
+                var ws = WordStart(caret, "_");
+                bool inWord = (char.IsLetter(c) || c == '_') && (char.IsLetter(CharAt(ws)) || CharAt(ws) == '_');
+                if ((inWord || c is '.' or '|') && TwigInsight.InExpression(Text, caret)) ShowCompletion(false);
             }
             return;
         }
@@ -541,10 +557,18 @@ public sealed partial class CodeEditor : TextEditor
         if (c == '[' && CharAt(caret - 2) == '#') { ShowCompletion(true); return; }
         if (_completion == null && PhpLexer.IsIdentStart(c))
         {
-            // first letter of a word
-            var p = CharAt(caret - 2);
-            if (!PhpLexer.IsIdentPart(p) && p != '$') ShowCompletion(false);
+            // any letter of a word (not only the first one: after Escape / Backspace, typing again reopens the list)
+            var ws = WordStart(caret, "_");
+            if (PhpLexer.IsIdentStart(CharAt(ws))) ShowCompletion(false);
         }
+    }
+
+    /// <summary>Start of the word that ends at <paramref name="caret"/> (letters, digits and <paramref name="extra"/>).</summary>
+    private int WordStart(int caret, string extra)
+    {
+        int s = caret;
+        while (s > 0 && (char.IsLetterOrDigit(CharAt(s - 1)) || extra.Contains(CharAt(s - 1)))) s--;
+        return s;
     }
 
     private bool IsInComment(int offset)
@@ -1201,6 +1225,9 @@ public sealed partial class CodeEditor : TextEditor
         {
             try { text = Workspace.Insight.Resolve(Text, offset, FilePath)?.Description; } catch { }
         }
+        // a greyed (unused) symbol: why
+        if (hits.Count == 0 && _unusedSymbols.FirstOrDefault(u => offset >= u.Start && offset <= u.Start + u.Length) is { } unusedHere)
+            text = unusedHere.Message + (text != null ? "\n\n" + text : "");
         if (string.IsNullOrWhiteSpace(text)) return;
         _hoverTip.Child = DocPopup.Build(text, hits.Count > 0);
         var p = e.GetPosition(this);

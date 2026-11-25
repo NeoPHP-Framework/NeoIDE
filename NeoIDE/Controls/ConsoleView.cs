@@ -203,6 +203,7 @@ public sealed class ConsoleView : DockPanel
         bool startsLine = doc.TextLength == 0 || doc.GetCharAt(doc.TextLength - 1) == '\n';
         int firstLine = startsLine ? doc.LineCount : doc.LineCount + 1;
         doc.Insert(doc.TextLength, (startsLine ? "" : "\n") + text);
+        _lineOpen = true; // a line written here has no new line: the raw output of a command starts below it
         for (int l = firstLine; l <= doc.LineCount; l++)
         {
             var lineText = doc.GetText(doc.GetLineByNumber(l));
@@ -218,6 +219,8 @@ public sealed class ConsoleView : DockPanel
         _output.ScrollToEnd();
     }
 
+    private bool _lineOpen;
+
     /// <summary>A complete output line of the running command (used to detect generated files).</summary>
     public event Action<string>? LineReceived;
 
@@ -228,6 +231,8 @@ public sealed class ConsoleView : DockPanel
         chunk = Ansi.Replace(chunk, "").Replace("\r\n", "\n").Replace("\r", "");
         if (chunk.Length == 0) return;
         var doc = _output.Document;
+        if (_lineOpen && !isAnswer && doc.TextLength > 0 && doc.GetCharAt(doc.TextLength - 1) != '\n') chunk = "\n" + chunk;
+        _lineOpen = false;
         int firstLine = doc.LineCount;
         doc.Insert(doc.TextLength, chunk);
         int lastComplete = doc.GetCharAt(doc.TextLength - 1) == '\n' ? doc.LineCount - 1 : doc.LineCount - 1;

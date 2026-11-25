@@ -151,6 +151,7 @@
                             <MenuItem x:Name="LintItem" Header="Check the syntax while typing (php -l)" IsCheckable="True" Click="LintToggle_Click"/>
                             <MenuItem x:Name="PhpStanOnSaveItem" Header="PHPStan on save (when installed)" IsCheckable="True" Click="PhpStanOnSave_Click"/>
                             <MenuItem x:Name="NeoChecksItem" Header="Check NeoPHP names (routes, templates, .env)" IsCheckable="True" Click="NeoChecks_Click"/>
+                            <MenuItem x:Name="ShowUsagesItem" Header="Show the usages of the methods" IsCheckable="True" Click="ShowUsages_Click"/>
                             <MenuItem Header="PHPStan level without phpstan.neon…" Click="PhpStanLevel_Click"/>
                         </MenuItem>
                     </MenuItem>

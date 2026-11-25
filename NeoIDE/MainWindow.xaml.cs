@@ -500,6 +500,8 @@ public partial class MainWindow : Window, IIdeShell
             {
                 Workspace.Index.UpdateFile(tab.Path, tab.Editor.Text);
                 PhpStanOnSave(tab.Path);
+                // the usages shown after the methods may have changed in every open PHP file
+                foreach (var other in _tabs) other.Editor?.RefreshUsages();
             }
             if (Path.GetFileName(tab.Path).Equals("composer.json", StringComparison.OrdinalIgnoreCase))
                 SetStatus("composer.json saved — run NeoPHP › Composer › update to apply the changes");

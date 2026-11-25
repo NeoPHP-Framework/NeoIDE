@@ -4,6 +4,23 @@ using NeoIDE.Editor;
 using NeoIDE.Php;
 using NeoIDE.Services;
 
+if (args.Length == 2 && args[0] == "--inspect")
+{
+    // read-only: the inspections of every PHP file of src/ of a project (false positive hunting)
+    Workspace.Open(args[1]);
+    Workspace.PhpExe = (await PhpLocator.GetDefaultAsync())?.Path;
+    await Workspace.Index.BuildAsync(args[1], Workspace.PhpExe);
+    foreach (var f in Directory.EnumerateFiles(Path.Combine(args[1], "src"), "*.php", SearchOption.AllDirectories))
+    {
+        var text = File.ReadAllText(f);
+        var info = PhpParser.Parse(text, f);
+        var rel = Path.GetRelativePath(args[1], f);
+        foreach (var u in CodeInspector.FindUndefined(text, info)) Console.WriteLine($"UNDEFINED {rel}:{text[..u.Start].Count(c => c == '\n') + 1}  {u.Message}");
+        foreach (var u in CodeInspector.FindUnused(text, info)) Console.WriteLine($"UNUSED    {rel}:{text[..u.Start].Count(c => c == '\n') + 1}  {u.Message}");
+    }
+    return 0;
+}
+
 if (args.Length == 3 && args[0] == "--render")
 {
     // Renders the IDE windows offscreen to PNG in both themes: --render <out-dir> <project-dir>
@@ -278,6 +295,35 @@ if (args.Length == 3 && args[0] == "--render")
                     try { Directory.Delete(Path.Combine(project, "templates", "v3")); } catch { }
                     File.WriteAllText(envFile, envOriginal);
                 }
+                continue;
+            }
+            if (onlyWhat == "inspections")
+            {
+                // greyed unused symbols, undefined members underlined, usages after the methods
+                Workspace.Open(project);
+                Workspace.PhpExe = Task.Run(() => PhpLocator.GetDefaultAsync()).GetAwaiter().GetResult()?.Path;
+                var dir = Path.Combine(project, "src", "Service");
+                Directory.CreateDirectory(dir);
+                var file = Path.Combine(dir, "V4Inspect.php");
+                var caller = Path.Combine(dir, "V4Caller.php");
+                File.WriteAllText(file, "<?php\nnamespace App\\Service;\n\nclass V4Inspect\n{\n    private const HOME_ROUTE = 'home_index';\n    private const UNUSED_CONST = 1;\n    private string $unusedProp = '';\n\n    public function run(int $a, int $b): string\n    {\n        $this->helper();\n        return self::HOME_INDEX . $a;\n    }\n\n    public function never(): void\n    {\n    }\n\n    private function helper(): void\n    {\n    }\n}\n");
+                File.WriteAllText(caller, "<?php\nnamespace App\\Service;\n\nclass V4Caller\n{\n    public function go(V4Inspect $i): void\n    {\n        $i->run(1, 2);\n        $i->run(3, 4);\n    }\n}\n");
+                Task.Run(() => Workspace.Index.BuildAsync(project, Workspace.PhpExe)).GetAwaiter().GetResult();
+                var ied = new CodeEditor();
+                ied.Load(file, File.ReadAllText(file));
+                var iw = new System.Windows.Window { Content = ied, Background = ThemeManager.Brush("EditorBg") };
+                try
+                {
+                    Snap(iw, $"inspections-{tn0}", 900, 520, () =>
+                    {
+                        _ = ied.ComputeUsagesAsync();
+                    });
+                    Console.WriteLine("USAGES " + string.Join(", ", ied.MethodUsages.Select(kv => $"{kv.Key}={kv.Value.Count}")));
+                    Console.WriteLine("UNUSED " + string.Join(", ", ied.UnusedSymbols.Select(u => u.Message)));
+                    Console.WriteLine("UNDEFINED " + string.Join(", ", ied.UndefinedMembers.Select(u => u.Message)));
+                    Console.WriteLine("FIXES " + string.Join(", ", ied.TemplateQuickFixes(ied.Text.IndexOf("HOME_INDEX") + 2).Select(f => f.label)));
+                }
+                finally { File.Delete(file); File.Delete(caller); iw.Close(); }
                 continue;
             }
             if (onlyWhat == "html")
@@ -1162,6 +1208,43 @@ try { Directory.Delete(repo, true); } catch { }
             File.Delete(shapeCtl);
             File.Delete(shapeTpl);
             Workspace.Index.RemoveFile(shapeCtl);
+        }
+
+        // inspections: unused members / parameters, undefined members, usages of the methods
+        var inspFile = Path.Combine(e2e, "src", "Service", "V4Inspect.php");
+        var callerFile = Path.Combine(e2e, "src", "Service", "V4Caller.php");
+        Directory.CreateDirectory(Path.GetDirectoryName(inspFile)!);
+        var insp = "<?php\nnamespace App\\Service;\n\nclass V4Inspect\n{\n    private const HOME_ROUTE = 'home_index';\n    private const UNUSED_CONST = 1;\n    private string $used = '';\n    private string $unusedProp = '';\n\n    public function __construct(private int $promotedUnused, private int $promotedUsed) {}\n\n    public function run(int $a, int $b): string\n    {\n        $x = self::HOME_INDEX;\n        $this->helper();\n        $this->nope();\n        $f = function (int $c) use ($x) { return $x; };\n        echo $this->used . $this->promotedUsed . $this->missing . \"{$a}\";\n        return self::HOME_ROUTE;\n    }\n\n    private function helper(): void {}\n    private function neverCalled(): void {}\n}\n";
+        File.WriteAllText(inspFile, insp);
+        File.WriteAllText(callerFile, "<?php\nnamespace App\\Service;\n\nclass V4Caller\n{\n    public function go(V4Inspect $i): void\n    {\n        $i->run(1, 2);\n        $i->run(3, 4);\n    }\n}\n");
+        try
+        {
+            Workspace.Index.UpdateFile(inspFile);
+            Workspace.Index.UpdateFile(callerFile);
+            var inspInfo = PhpParser.Parse(insp, inspFile);
+            var unusedSyms = CodeInspector.FindUnused(insp, inspInfo).Select(u => insp.Substring(u.Start, u.Length)).ToList();
+            var expectedUnused = new[] { "UNUSED_CONST", "$unusedProp", "$promotedUnused", "neverCalled", "$b" };
+            Check("unused: private constant / property / promoted property / method, parameters (used ones kept)",
+                expectedUnused.All(unusedSyms.Contains) && unusedSyms.Count == expectedUnused.Length, string.Join(", ", unusedSyms));
+            var undefinedMembers = CodeInspector.FindUndefined(insp, inspInfo);
+            Check("undefined: self::CONST (did you mean), $this->method(), $this->property",
+                undefinedMembers.Count == 3 && undefinedMembers.Any(u => u.Message.StartsWith("Constant 'HOME_INDEX' not found in V4Inspect") && u.Suggestions.FirstOrDefault() == "HOME_ROUTE" && u.Severity == NeoIDE.Services.Diagnostics.Severity.Error)
+                && undefinedMembers.Any(u => u.Message.StartsWith("Method 'nope()'")) && undefinedMembers.Any(u => u.Message.StartsWith("Property 'missing'") && u.Severity == NeoIDE.Services.Diagnostics.Severity.Warning),
+                string.Join(" | ", undefinedMembers.Select(u => u.Message)));
+            var ownerCls = Workspace.Index.GetClass("App\\Service\\V4Inspect")!;
+            var runUsages = CodeInspector.MethodUsages(ownerCls.Members.First(m => m.Name == "run"), ownerCls);
+            var helperUsages = CodeInspector.MethodUsages(ownerCls.Members.First(m => m.Name == "helper"), ownerCls);
+            Check("usages of a method in the project (resolved receivers)", runUsages.Count == 2 && runUsages.All(u => u.File.EndsWith("V4Caller.php")) && helperUsages.Count == 1,
+                $"run={runUsages.Count} helper={helperUsages.Count}");
+            var lensMethods = UsageLens.Methods(PhpParser.Parse(File.ReadAllText(Path.Combine(e2e, "src", "Controller", "HomeController.php"))), File.ReadAllText(Path.Combine(e2e, "src", "Controller", "HomeController.php")));
+            Check("usages: controller actions with a #[Route] are not counted", lensMethods.Count == 0, string.Join(",", lensMethods.Select(m => m.method.Name)));
+        }
+        finally
+        {
+            File.Delete(inspFile);
+            File.Delete(callerFile);
+            Workspace.Index.RemoveFile(inspFile);
+            Workspace.Index.RemoveFile(callerFile);
         }
 
         // New PHP Class: completion of extends / implements

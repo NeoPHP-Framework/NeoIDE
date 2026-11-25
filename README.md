@@ -16,6 +16,9 @@ The IDE of the [NeoPHP](https://github.com/NeoPHP-Framework) framework — a Php
   parameters and Twig attributes, create a missing template, add a variable to `.env` / a parameter to `services.yaml`
 - **Reformat Code (Ctrl+Alt+L)**: PHP-CS-Fixer for PHP when installed (the project's `.php-cs-fixer.dist.php`, else PER-CS),
   built-in re-indentation of PHP views, Twig, HTML, CSS, JS (alternative syntax, Twig blocks…), JSON; selection only, on save
+- **Inspections**: unused private properties / methods / constants and parameters greyed, undefined constants / methods /
+  properties of `self::`, `static::`, `parent::`, `$this->` and named classes underlined (did you mean…, Alt+Enter),
+  "3 usages" / "no usages" after each method (click: the list of the calls)
 - **Live problems**: syntax check while typing (`php -l`), PHPStan on save and on the whole project (Code › Inspect Code),
   NeoPHP checks — underlined in the editor, error stripe, F2 / Shift+F2, Problems tool window (Alt+6)
 - **Xdebug debugger**: breakpoints (conditional), Run › Debug `bin/neo serve` / a neo command / a script, step over / into / out,

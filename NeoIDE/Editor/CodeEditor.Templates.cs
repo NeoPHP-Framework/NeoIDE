@@ -40,7 +40,7 @@ public sealed partial class CodeEditor
     /// <summary>The NeoPHP / Twig fixes available at the caret (label, action).</summary>
     public List<(string label, Action action)> TemplateQuickFixes(int caret)
     {
-        var list = new List<(string, Action)>();
+        var list = new List<(string, Action)>(UndefinedQuickFixes(caret));
         if (NeoRefAt(caret) is { } r && NeoInsight.Problem(r) != null)
         {
             foreach (var name in NeoInsight.Suggestions(r))

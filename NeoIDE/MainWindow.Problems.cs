@@ -31,6 +31,7 @@ public partial class MainWindow
         PhpStanOnSaveItem.IsChecked = AppSettings.Current.PhpStanOnSave;
         NeoChecksItem.IsChecked = AppSettings.Current.NeoChecks;
         FormatOnSaveItem.IsChecked = AppSettings.Current.FormatOnSave;
+        ShowUsagesItem.IsChecked = AppSettings.Current.ShowUsages;
         RefreshProblemsStatus();
     }
 
@@ -98,6 +99,13 @@ public partial class MainWindow
         AppSettings.Current.LintWhileTyping = LintItem.IsChecked;
         AppSettings.Current.Save();
         if (!LintItem.IsChecked) foreach (var t in _tabs) if (t.Editor?.FilePath is { } f) DiagnosticsStore.Set(f, "php", Array.Empty<Diagnostic>());
+    }
+
+    private void ShowUsages_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettings.Current.ShowUsages = ShowUsagesItem.IsChecked;
+        AppSettings.Current.Save();
+        foreach (var t in _tabs) if (t.Editor != null) { if (ShowUsagesItem.IsChecked) t.Editor.RefreshUsages(); else t.Editor.ClearUsages(); }
     }
 
     private void FormatOnSave_Click(object sender, RoutedEventArgs e)
