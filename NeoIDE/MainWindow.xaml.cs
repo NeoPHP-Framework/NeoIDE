@@ -363,6 +363,7 @@ public partial class MainWindow : Window, IIdeShell
                 _structureTimer.Start();
             };
             editor.NavigateRequested += (file, off) => OpenFile(file, off);
+            editor.IndentChanged += () => { if (CurrentEditor == editor) UpdateIndentStatus(); };
             editor.StatusMessage += msg =>
             {
                 if (Regex.IsMatch(msg, @"^\d+:\d+$")) StatusPosition.Text = msg;
@@ -536,7 +537,7 @@ public partial class MainWindow : Window, IIdeShell
         StatusLanguage.Text = SyntaxRegistry.DisplayName(ed?.Language ?? (ImageExt.Contains(Path.GetExtension(tab.Path)) ? "Image" : null));
         StatusEncoding.Text = tab.Encoding is UTF8Encoding u ? (u.GetPreamble().Length > 0 ? "UTF-8 BOM" : "UTF-8") : tab.Encoding.WebName.ToUpperInvariant();
         StatusEol.Text = ed == null ? "" : ed.Text.Contains("\r\n") ? "CRLF" : "LF";
-        StatusIndent.Text = ed == null ? "" : $"{ed.Options.IndentationSize} spaces";
+        UpdateIndentStatus();
         if (ed != null)
         {
             var line = ed.Document.GetLineByOffset(ed.CaretOffset);

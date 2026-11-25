@@ -265,6 +265,35 @@ public sealed partial class CodeEditor : TextEditor
         foreach (var margin in TextArea.LeftMargins.OfType<FoldingMargin>())
             margin.Visibility = s.EditorShowFolding ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
         if (_breakpointMargin != null) ArrangeMargins();
+        ApplyIndentation();
+    }
+
+    // ------------------------------------------------------------------ indentation
+
+    private IndentResolved? _manualIndent;
+
+    /// <summary>The indentation of the file: chosen in the status bar, .editorconfig, detected, language, general.</summary>
+    public IndentResolved Indent { get; private set; } = new(4, false, "general");
+
+    /// <summary>One indentation level ("    " or a tab).</summary>
+    public string IndentUnit => Indent.Unit;
+
+    public event Action? IndentChanged;
+
+    /// <summary>Status bar: the indentation of this file only (null: back to the settings).</summary>
+    public void SetIndent(IndentResolved? manual)
+    {
+        _manualIndent = manual;
+        ApplyIndentation();
+    }
+
+    public void ApplyIndentation()
+    {
+        Indent = _manualIndent ?? IndentStyle.For(Language, FilePath, Document?.Text);
+        Options.ConvertTabsToSpaces = !Indent.UseTabs;
+        Options.IndentationSize = Indent.Size;
+        if (TextArea.IndentationStrategy is SmartIndentation smart) smart.Unit = Indent.Unit;
+        IndentChanged?.Invoke();
     }
 
     public void Load(string path, string text)
@@ -278,8 +307,6 @@ public sealed partial class CodeEditor : TextEditor
         TextArea.IndentationStrategy = new SmartIndentation(Language == "YAML");
         _colors.Language = Language;
         _colors.Enabled = Language is "CSS" or "HTML" or "Twig" or "PHP" or "JavaScript" or "JSON" or "YAML" or "XML" or "Markdown";
-        if (Language is "JSON" or "JavaScript" or "CSS" && Regex.IsMatch(text, @"^\s{2}\S", RegexOptions.Multiline) && !Regex.IsMatch(text, @"^\s{4}\S", RegexOptions.Multiline))
-            Options.IndentationSize = 2;
         _foldingManager = FoldingManager.Install(TextArea);
         StyleFoldingMargin();
         ApplyDisplay();
@@ -630,7 +657,7 @@ public sealed partial class CodeEditor : TextEditor
                 var line = Document.GetLineByOffset(CaretOffset);
                 var indent = LeadingWhitespace(Document.GetText(line));
                 var nl = Document.Text.Contains("\r\n") ? "\r\n" : "\n";
-                var inner = indent + new string(' ', Options.IndentationSize);
+                var inner = indent + IndentUnit;
                 var caret = CaretOffset;
                 Document.Insert(caret, nl + inner + nl + indent);
                 CaretOffset = caret + nl.Length + inner.Length;
@@ -989,7 +1016,7 @@ public sealed partial class CodeEditor : TextEditor
             if (edit != null && !toImport.Contains(fqn)) toImport.Add(fqn);
             return name;
         }
-        var stubs = PhpInsight.BuildStubs(miss.Methods, ClassRef, new string(' ', Options.IndentationSize), nl);
+        var stubs = PhpInsight.BuildStubs(miss.Methods, ClassRef, IndentUnit, nl);
         // insert before the closing brace of the class
         var close = cls.BodyEnd;
         if (close <= 0 || close >= Document.TextLength || Document.GetCharAt(close) != '}') { StatusMessage?.Invoke("Close the class body first"); return; }
@@ -1364,6 +1391,9 @@ public sealed partial class CodeEditor : TextEditor
 /// <summary>Keeps the previous indentation, indents after { [ ( and dedents closing brackets.</summary>
 public sealed class SmartIndentation(bool yaml) : IIndentationStrategy
 {
+    /// <summary>One level of indentation (spaces or a tab, see CodeEditor.Indent).</summary>
+    public string Unit { get; set; } = "    ";
+
     public void IndentLine(TextDocument document, DocumentLine line)
     {
         var prev = line.PreviousLine;
@@ -1374,7 +1404,7 @@ public sealed class SmartIndentation(bool yaml) : IIndentationStrategy
         var prevText = document.GetText(prev);
         var indent = new string(prevText.TakeWhile(c => c is ' ' or '\t').ToArray());
         var trimmed = prevText.TrimEnd();
-        var unit = "    ";
+        var unit = Unit;
         if (trimmed.EndsWith("{") || trimmed.EndsWith("[") || trimmed.EndsWith("(") || yaml && trimmed.EndsWith(":")
             || trimmed.EndsWith("=>") || Regex.IsMatch(trimmed, @"<(?!/)(?![^>]*/>)[\w:-]+[^>]*>$") && !Regex.IsMatch(trimmed, @"<(br|img|input|meta|link|hr)\b", RegexOptions.IgnoreCase))
             indent += unit;

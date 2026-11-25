@@ -39,6 +39,7 @@ public sealed partial class SettingsDialog : DialogWindow
         _pages["Plugins"] = BuildPlugins();
         _pages["Appearance"] = BuildAppearance();
         _pages["Editor"] = BuildEditor();
+        _pages["Code Style"] = BuildCodeStyle();
         _pages["Live Templates"] = BuildTemplates();
         _pages["PHP"] = BuildPhp();
         if (Workspace.Root != null) _pages["Composer packages"] = BuildPackages();
@@ -780,6 +781,7 @@ public sealed partial class SettingsDialog : DialogWindow
         _s.AuthorName = _author.Text.Trim();
         _s.AuthorEmail = _email.Text.Trim();
         CommitTemplates();
+        CommitCodeStyle();
         _committed = true;
         DisplayManager.Apply(save: true);
     }

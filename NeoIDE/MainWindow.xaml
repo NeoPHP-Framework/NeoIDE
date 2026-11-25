@@ -351,7 +351,7 @@
                         <TextBlock x:Name="StatusPosition" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
                         <TextBlock x:Name="StatusEol" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
                         <TextBlock x:Name="StatusEncoding" Text="UTF-8" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
-                        <TextBlock x:Name="StatusIndent" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
+                        <TextBlock x:Name="StatusIndent" Style="{StaticResource SecondaryText}" Margin="0,0,16,0" Background="Transparent" Cursor="Hand" MouseLeftButtonUp="StatusIndent_Click"/>
                         <TextBlock x:Name="StatusLanguage" Style="{StaticResource SecondaryText}" Margin="0,0,16,0"/>
                         <Button Style="{StaticResource ToolButton}" Padding="4,0" Click="Interpreter_Click" ToolTip="PHP interpreter of the project">
                             <TextBlock x:Name="StatusPhp" Text="PHP" Style="{StaticResource SecondaryText}"/>

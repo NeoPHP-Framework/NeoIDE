@@ -432,6 +432,13 @@ if (args.Length == 3 && args[0] == "--render")
                         view.Load(Path.Combine(project, "templates", "home", "index.php"), "<ul>\n    for\n</ul>\n");
                         view.CaretOffset = view.Text.IndexOf("for") + 3;
                         Ok("live template of a NeoPHP view (HTML of a .php file)", view.TryExpandLiveTemplate() && view.Text.Contains("    <?php foreach ($items as $item): ?>\n        \n    <?php endforeach ?>"), view.Text);
+                        // indentation of the file: detected tabs, then chosen in the status bar
+                        var tabEd = new CodeEditor();
+                        tabEd.Load(Path.Combine(project, "src", "Tabs.php"), "<?php\nclass A\n{\n\tpublic function f()\n\t{\n\t\treturn 1;\n\t}\n}\n");
+                        var detectedTabs = tabEd.Indent.UseTabs && !tabEd.Options.ConvertTabsToSpaces && tabEd.IndentUnit == "\t";
+                        tabEd.SetIndent(new NeoIDE.Services.IndentResolved(2, false, "manual"));
+                        Ok("indentation: tabs detected in the file, then 2 spaces chosen for it", detectedTabs && tabEd.Options.ConvertTabsToSpaces && tabEd.Options.IndentationString == "  ",
+                            $"{detectedTabs} {tabEd.Indent.Label}");
                         var noExpand = new CodeEditor();
                         noExpand.Load(page, "{{ div }}");
                         noExpand.CaretOffset = 6;
@@ -1122,6 +1129,39 @@ try { Directory.Delete(repo, true); } catch { }
     var json = CodeFormatter.FormatJson("{\"a\":[1,2],\"b\":{\"c\":\"/x é\"}}", 4);
     Check("reformat JSON (order, unescaped / and accents)", json == "{\n    \"a\": [\n        1,\n        2\n    ],\n    \"b\": {\n        \"c\": \"/x é\"\n    }\n}\n", json ?? "null");
     Check("reformat JSON: invalid JSON is left alone", CodeFormatter.FormatJson("{\"a\":", 4) == null);
+
+    // indentation: detection, .editorconfig, per language
+    var two = "a:\n  b: 1\n  c:\n    d: 2\n  e: 3\n";
+    var fourPhp = "<?php\nclass A\n{\n    /**\n     * Doc\n     */\n    public function f()\n    {\n        return 1;\n    }\n}\n";
+    var tabbed = "<?php\nclass A\n{\n\tpublic function f()\n\t{\n\t\treturn 1;\n\t}\n}\n";
+    Check("indentation detected: 2 spaces, 4 spaces (doc comments ignored), tabs",
+        IndentStyle.Detect(two)?.Size == 2 && IndentStyle.Detect(fourPhp) is { Size: 4, UseTabs: false } && IndentStyle.Detect(tabbed)?.UseTabs == true && IndentStyle.Detect("a\nb\n") == null,
+        $"{IndentStyle.Detect(two)?.Label} {IndentStyle.Detect(fourPhp)?.Label} {IndentStyle.Detect(tabbed)?.Label}");
+    Check(".editorconfig globs", EditorConfig.Matches("*", "src/A.php") && EditorConfig.Matches("*.{yml,yaml}", "config/a.yaml") && !EditorConfig.Matches("*.{yml,yaml}", "a.php")
+        && EditorConfig.Matches("src/**.php", "src/x/y.php") && !EditorConfig.Matches("src/*.php", "src/x/y.php") && EditorConfig.Matches("Makefile", "sub/Makefile") && EditorConfig.Matches("/composer.json", "composer.json"));
+    var ecDir = Path.Combine(Path.GetTempPath(), "neoide-ec-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(Path.Combine(ecDir, "config"));
+    File.WriteAllText(Path.Combine(ecDir, ".editorconfig"), "root = true\n\n[*]\nindent_style = space\nindent_size = 4\n\n[*.{yml,yaml}]\nindent_size = 2\n\n[Makefile]\nindent_style = tab\n");
+    File.WriteAllText(Path.Combine(ecDir, "config", ".editorconfig"), "[special.yaml]\nindent_size = 3\n");
+    try
+    {
+        var ecYaml = EditorConfig.IndentFor(Path.Combine(ecDir, "config", "a.yaml"));
+        var ecSpecial = EditorConfig.IndentFor(Path.Combine(ecDir, "config", "special.yaml"));
+        var ecMake = EditorConfig.IndentFor(Path.Combine(ecDir, "Makefile"));
+        Check(".editorconfig: sections, the closest file wins, tabs", ecYaml is { Size: 2, UseTabs: false } && ecSpecial?.Size == 3 && ecMake?.UseTabs == true,
+            $"{ecYaml?.Label} {ecSpecial?.Label} {ecMake?.Label}");
+        var st = new AppSettings { IndentSize = 4, DetectIndent = true, UseEditorConfig = true, LanguageIndent = new() { ["YAML"] = new IndentSetting { Size = 8 } } };
+        var r1 = IndentStyle.For("YAML", Path.Combine(ecDir, "config", "a.yaml"), "a:\n    b: 1\n    c: 2\n    d: 3\n", st);
+        st.UseEditorConfig = false;
+        var r2 = IndentStyle.For("YAML", Path.Combine(ecDir, "config", "a.yaml"), "a:\n    b: 1\n    c: 2\n    d: 3\n", st);
+        st.DetectIndent = false;
+        var r3 = IndentStyle.For("YAML", Path.Combine(ecDir, "config", "a.yaml"), "a:\n    b: 1\n", st);
+        var r4 = IndentStyle.For("PHP", Path.Combine(ecDir, "a.php"), "", st);
+        Check("indentation priority: .editorconfig > detected > language > general",
+            r1 is { Size: 2, Source: ".editorconfig" } && r2 is { Size: 4, Source: "detected" } && r3 is { Size: 8, Source: "YAML" } && r4 is { Size: 4, Source: "general" },
+            $"{r1.Label}/{r1.Source} {r2.Label}/{r2.Source} {r3.Label}/{r3.Source} {r4.Label}/{r4.Source}");
+    }
+    finally { try { Directory.Delete(ecDir, true); } catch { } }
 
     // live templates: defaults, body syntax, contexts
     var defaults = LiveTemplates.Defaults();
