@@ -432,6 +432,20 @@ if (args.Length == 3 && args[0] == "--render")
                         view.Load(Path.Combine(project, "templates", "home", "index.php"), "<ul>\n    for\n</ul>\n");
                         view.CaretOffset = view.Text.IndexOf("for") + 3;
                         Ok("live template of a NeoPHP view (HTML of a .php file)", view.TryExpandLiveTemplate() && view.Text.Contains("    <?php foreach ($items as $item): ?>\n        \n    <?php endforeach ?>"), view.Text);
+                        // CSS: "var(" types the var() function, not one of the var(--x) proposals ranked above it
+                        var cssEd = new CodeEditor();
+                        hw.Content = cssEd;
+                        cssEd.Load(Path.Combine(project, "assets", "css", "test.css"), ":root {\n    --gap: 4px;\n    --accent: #000;\n}\np {\n    padding: \n}\n");
+                        cssEd.UpdateLayout();
+                        cssEd.TextArea.Focus();
+                        cssEd.CaretOffset = cssEd.Text.IndexOf("padding: ") + "padding: ".Length;
+                        foreach (var ch in "var") cssEd.TextArea.PerformTextInput(ch.ToString());
+                        var listBefore = cssEd.CompletionLabels;
+                        Console.WriteLine("CSS LIST " + (listBefore == null ? "closed" : string.Join(",", listBefore.Take(6))));
+                        cssEd.TextArea.PerformTextInput("(");
+                        var afterVar = cssEd.Text[(cssEd.Text.IndexOf("padding: ") + 9)..cssEd.Text.IndexOf("\n}\n", cssEd.Text.IndexOf("padding: "))];
+                        Ok("CSS: var( gives var() with the caret inside, no variable inserted", afterVar == "var()" && cssEd.Text[cssEd.CaretOffset - 1] == '(' , afterVar);
+                        hw.Content = ed;
                         // indentation of the file: detected tabs, then chosen in the status bar
                         var tabEd = new CodeEditor();
                         tabEd.Load(Path.Combine(project, "src", "Tabs.php"), "<?php\nclass A\n{\n\tpublic function f()\n\t{\n\t\treturn 1;\n\t}\n}\n");

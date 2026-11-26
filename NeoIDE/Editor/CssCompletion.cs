@@ -135,7 +135,7 @@ public static class CssCompletion
                     foreach (var c in typeof(System.Windows.Media.Colors).GetProperties().Select(p => p.Name.ToLowerInvariant())) Add(c, c, EntryKind.Constant, 3, "colour");
                 foreach (var f in Functions) Add(f, f, EntryKind.Function, 4, "function", 1);
                 foreach (var g in Global) Add(g, g, EntryKind.Keyword, 2);
-                foreach (var v in Variables(css, projectRoot)) Add($"var({v})", $"var({v})", EntryKind.Variable, 6, "variable");
+                foreach (var v in Variables(css, projectRoot)) Add($"var({v})", $"var({v})", EntryKind.Variable, 3, "variable"); // after the var() function
                 break;
             case Ctx.Variable:
                 result.ReplaceStart = cssStartInDocument + text.LastIndexOf("--", StringComparison.Ordinal);

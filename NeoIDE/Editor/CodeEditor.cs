@@ -488,8 +488,17 @@ public sealed partial class CodeEditor : TextEditor
 
         if (_completion != null)
         {
-            if (c == '(' && _completion.CompletionList.SelectedItem != null)
+            if (c == '(' && _completion.CompletionList.SelectedItem is CompletionData selected)
             {
+                // "(" completes a function / method: the one named exactly like the typed word first ("var(" is the
+                // var() function, not the var(--x) proposal ranked above it), else the selected one when it is a
+                // function; anything else (a variable, a value...) is not inserted: the "(" is just typed
+                var typed = Document.GetText(_completion.StartOffset, Math.Max(0, CaretOffset - _completion.StartOffset));
+                var function = _completion.CompletionList.CompletionData.OfType<CompletionData>()
+                                   .FirstOrDefault(d => d.Entry.Insert == typed + "()" || d.Entry.Insert == typed + "(")
+                               ?? (IsCallable(selected.Entry, typed) ? selected : null);
+                if (function == null) { _completion.Close(); return; }
+                _completion.CompletionList.SelectedItem = function;
                 _completion.CompletionList.RequestInsertion(e);
                 // the item already inserted "()": swallow the typed "("
                 if (CharAt(CaretOffset - 1) == '(' || CharAt(CaretOffset - 1) == ')') e.Handled = true;
@@ -588,6 +597,18 @@ public sealed partial class CodeEditor : TextEditor
             var ws = WordStart(caret, "_");
             if (PhpLexer.IsIdentStart(CharAt(ws))) ShowCompletion(false);
         }
+    }
+
+    /// <summary>
+    /// An entry "(" may complete: a function / method / class (new Foo()) whose call is inserted, not a proposal with
+    /// its arguments already written (CSS var(--x), url(...)) nor a variable or a value.
+    /// </summary>
+    private static bool IsCallable(CompletionEntry entry, string typed)
+    {
+        if (entry.Kind is EntryKind.Variable or EntryKind.Constant or EntryKind.Property or EntryKind.Keyword or EntryKind.EnumCase) return false;
+        var open = entry.Insert.IndexOf('(');
+        if (open >= 0 && entry.Insert.Length > open + 2 && entry.Insert[open + 1] != ')') return false; // var(--x)
+        return entry.Kind is EntryKind.Method or EntryKind.Function or EntryKind.Class || open >= 0;
     }
 
     /// <summary>Start of the word that ends at <paramref name="caret"/> (letters, digits and <paramref name="extra"/>).</summary>
@@ -724,6 +745,9 @@ public sealed partial class CodeEditor : TextEditor
     }
 
     // ------------------------------------------------------------------ completion
+
+    /// <summary>The labels of the open completion list (test harness), null when it is closed.</summary>
+    public IReadOnlyList<string>? CompletionLabels => _completion?.CompletionList.CompletionData.Select(d => d.Text).ToList();
 
     /// <summary>Completion at the caret; an error of a provider never takes the editor down (status bar message).</summary>
     public void ShowCompletion(bool explicitInvoke)
