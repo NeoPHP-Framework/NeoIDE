@@ -9,7 +9,7 @@
         <UseWindowsForms>false</UseWindowsForms>
         <RootNamespace>NeoIDE</RootNamespace>
         <AssemblyName>NeoIDE</AssemblyName>
-        <Version>2.7.1</Version>
+        <Version>2.7.2</Version>
         <NoWarn>$(NoWarn);CS8618;CS0108;WFO2000</NoWarn>
         <StartupObject>NeoIDE.Program</StartupObject>
     <ApplicationIcon>Resources\neoide.ico</ApplicationIcon>
