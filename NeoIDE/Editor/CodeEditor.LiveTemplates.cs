@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Windows.Controls;
+using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Snippets;
 using NeoIDE.Php;
 using NeoIDE.Services;
@@ -9,6 +10,41 @@ namespace NeoIDE.Editor;
 /// <summary>Live templates: abbreviation + Tab (Twig, PHP, NeoPHP views, HTML), Ctrl+J lists them.</summary>
 public sealed partial class CodeEditor
 {
+    private InsertionContext? _snippet;
+    private TextAnchor? _snippetStart, _snippetEnd;
+    private bool _snippetWatch;
+
+    /// <summary>Whether the fields of an inserted template are being filled (Tab: next field).</summary>
+    public bool InSnippet => _snippet != null && !TextArea.StackedInputHandlers.IsEmpty;
+
+    /// <summary>Ends the field mode of the inserted template (Tab then indents again).</summary>
+    public void EndSnippet()
+    {
+        var context = _snippet;
+        _snippet = null;
+        if (context != null && !TextArea.StackedInputHandlers.IsEmpty) context.Deactivate(new SnippetEventArgs(DeactivateReason.Unknown));
+    }
+
+    /// <summary>The field mode ends when the caret leaves the template or when lines are selected (Tab indents them).</summary>
+    private void WatchSnippet()
+    {
+        if (_snippetWatch) return;
+        _snippetWatch = true;
+        TextArea.Caret.PositionChanged += (_, _) =>
+        {
+            if (_snippet == null || _snippetStart == null || _snippetEnd == null) return;
+            if (_snippetStart.IsDeleted || _snippetEnd.IsDeleted || CaretOffset < _snippetStart.Offset || CaretOffset > _snippetEnd.Offset) EndSnippet();
+        };
+    }
+
+    /// <summary>Tab on several selected lines indents them, even while the fields of a template are being filled.</summary>
+    public void EndSnippetOnLineSelection()
+    {
+        if (_snippet == null || TextArea.Selection.IsEmpty) return;
+        var sel = TextArea.Selection.SurroundingSegment;
+        if (sel != null && Document.GetLineByOffset(sel.Offset) != Document.GetLineByOffset(sel.EndOffset)) EndSnippet();
+    }
+
     /// <summary>The template contexts at an offset (none in a string, a comment or a Twig expression).</summary>
     public List<string> TemplateContextsAt(int offset)
     {
@@ -92,11 +128,28 @@ public sealed partial class CodeEditor
                     break;
             }
         }
+        EndSnippet();
+        WatchSnippet();
         using (Document.RunUpdate())
         {
             Document.Remove(start, length);
             CaretOffset = start;
-            snippet.Insert(TextArea);
+            // what Snippet.Insert(TextArea) does, keeping the context to end the field mode later
+            var selection = TextArea.Selection.SurroundingSegment;
+            var at = CaretOffset;
+            if (selection != null) at = selection.Offset + TextUtilities.GetWhitespaceAfter(Document, selection.Offset).Length;
+            var context = new InsertionContext(TextArea, at);
+            if (selection != null) Document.Remove(at, selection.EndOffset - at);
+            snippet.Insert(context);
+            context.RaiseInsertionCompleted(EventArgs.Empty);
+            if (!TextArea.StackedInputHandlers.IsEmpty)
+            {
+                _snippet = context;
+                _snippetStart = Document.CreateAnchor(context.StartPosition);
+                _snippetEnd = Document.CreateAnchor(context.InsertionPosition);
+                _snippetEnd.MovementType = AnchorMovementType.AfterInsertion;
+                context.Deactivated += (_, _) => { if (_snippet == context) _snippet = null; };
+            }
         }
         StatusMessage?.Invoke(fields.Count > 0 ? $"{template.Description} — Tab: next field, Enter: done" : template.Description);
     }

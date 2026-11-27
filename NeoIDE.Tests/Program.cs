@@ -417,6 +417,16 @@ if (args.Length == 3 && args[0] == "--render")
                         Type("post");
                         ed.TextArea.Caret.Offset = ed.TextArea.Caret.Offset; // keep the snippet mode
                         Ok("live template 'for' + Tab in Twig: the fields, indented", lt && ed.Text.Contains("    {% for post in items %}\n        \n    {% endfor %}"), ed.Text);
+                        // lines selected in the body + Tab: they are indented, the caret does not jump to the field "post"
+                        var inSnippet = ed.InSnippet;
+                        var bodyAt = ed.Text.IndexOf("{% for post in items %}\n") + "{% for post in items %}\n".Length;
+                        ed.Document.Replace(bodyAt, ed.Document.GetLineByOffset(bodyAt).Length, "        <li>\n        <a>x</a>\n        </li>");
+                        ed.TextArea.Selection = ICSharpCode.AvalonEdit.Editing.Selection.Create(ed.TextArea, bodyAt, bodyAt + "        <li>\n        <a>x</a>\n        </li>".Length);
+                        ed.EndSnippetOnLineSelection();
+                        System.Windows.Documents.EditingCommands.TabForward.Execute(null, ed.TextArea);
+                        Ok("Tab on lines selected in a live template: indents them", inSnippet && !ed.InSnippet
+                            && ed.Text.Contains("{% for post in items %}\n            <li>\n            <a>x</a>\n            </li>\n    {% endfor %}"), ed.Text);
+                        ed.CaretOffset = ed.Text.IndexOf("{% endblock");
                         // PHP: one field used three times is typed once
                         var phpEd = new CodeEditor();
                         phpEd.Load(Path.Combine(project, "src", "X.php"), "<?php\nfunction f() {\n    fori\n}\n");

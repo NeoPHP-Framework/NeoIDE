@@ -649,8 +649,9 @@ public sealed partial class CodeEditor : TextEditor
         if (key == Key.L && mods == (ModifierKeys.Control | ModifierKeys.Alt)) { _ = ReformatAsync(); e.Handled = true; return; }
         if (key is Key.Up or Key.Down && mods == (ModifierKeys.Control | ModifierKeys.Shift)) { MoveLine(key == Key.Up ? -1 : 1); e.Handled = true; return; }
         if (key == Key.Escape && _completion == null) { _hoverTip.IsOpen = false; }
+        if (key == Key.Tab && mods is ModifierKeys.None or ModifierKeys.Shift) EndSnippetOnLineSelection();
         // Tab: a live template, else an Emmet abbreviation (not while the fields of a template are being filled)
-        if (key == Key.Tab && mods == ModifierKeys.None && _completion == null && TextArea.Selection.IsEmpty && TextArea.ActiveInputHandler == TextArea.DefaultInputHandler
+        if (key == Key.Tab && mods == ModifierKeys.None && _completion == null && TextArea.Selection.IsEmpty && !InSnippet
             && (TryExpandLiveTemplate() || SupportsHtml && TryExpandAbbreviation())) { e.Handled = true; return; }
         if (key == Key.J && mods == ModifierKeys.Control) { ShowLiveTemplates(); e.Handled = true; return; }
         if (key == Key.F2 && mods is ModifierKeys.None or ModifierKeys.Shift) { GoToProblem(mods == ModifierKeys.Shift ? -1 : 1); e.Handled = true; return; }
